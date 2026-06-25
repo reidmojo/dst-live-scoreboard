@@ -11,8 +11,6 @@ const els = {
   seasonSelect: document.querySelector("#seasonSelect"),
   weekSelect: document.querySelector("#weekSelect"),
   refreshButton: document.querySelector("#refreshButton"),
-  leagueBoard: document.querySelector("#leagueBoard"),
-  gameList: document.querySelector("#gameList"),
   matchups: document.querySelector("#matchups"),
   auditDialog: document.querySelector("#auditDialog"),
   auditTitle: document.querySelector("#auditTitle"),
@@ -67,66 +65,7 @@ function render() {
   els.weekLabel.textContent = `${data.selected.season} Week ${data.selected.week}`;
   syncWeekOptions(data.weeks, data.selected.week);
 
-  renderLeagueBoard(data.teams);
-  renderGames(data.nflGames);
   renderMatchups(data.matchups);
-}
-
-function renderLeagueBoard(teams) {
-  els.leagueBoard.innerHTML = "";
-  for (const [rank, team] of teams.entries()) {
-    const row = document.createElement("article");
-    row.className = "team-row";
-    row.innerHTML = `
-      <div class="rank">${rank + 1}</div>
-      ${avatarHtml(team)}
-      <div class="team-main">
-        <div class="team-name">${escapeHtml(team.teamName)}</div>
-        <div class="team-sub">${escapeHtml(team.manager)} · ${team.dstTeam || "No DEF"} · ${recordText(team.record)}</div>
-      </div>
-      <div class="score-block">
-        <strong>${fmt(team.projectedCustomTotal)}</strong>
-        <span>${fmt(team.sleeperTotal)}</span>
-      </div>
-      <button class="audit-button" type="button">Audit</button>
-    `;
-    row.querySelector(".audit-button").addEventListener("click", () => openAudit(team));
-    els.leagueBoard.append(row);
-  }
-}
-
-function renderGames(games) {
-  els.gameList.innerHTML = "";
-  if (!games.length) {
-    els.gameList.innerHTML = `<div class="empty">No ESPN games found for this week.</div>`;
-    return;
-  }
-
-  for (const game of games) {
-    const card = document.createElement("article");
-    card.className = "game-card";
-    const teamScores = game.teamScores
-      .map((score) => `
-        <div class="game-team">
-          <span>${escapeHtml(score.team)}</span>
-          <strong>${fmt(score.points)}</strong>
-        </div>
-      `)
-      .join("");
-    card.innerHTML = `
-      <div class="game-head">
-        <strong>${escapeHtml(game.shortName || game.name)}</strong>
-        <span>${escapeHtml(game.status || "")}</span>
-      </div>
-      <div class="game-scoreline">${teamScores}</div>
-      ${
-        game.activeDrive
-          ? `<div class="active-drive">${escapeHtml(game.activeDrive.team)}: ${escapeHtml(game.activeDrive.description || game.activeDrive.result)}</div>`
-          : ""
-      }
-    `;
-    els.gameList.append(card);
-  }
 }
 
 function renderMatchups(matchups) {
@@ -293,7 +232,6 @@ function setLoading(isLoading) {
 function renderError(error) {
   const message = `<div class="empty error">${escapeHtml(error.message)}</div>`;
   els.matchups.innerHTML = message;
-  els.leagueBoard.innerHTML = message;
 }
 
 function fmt(value) {

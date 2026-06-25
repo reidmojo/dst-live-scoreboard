@@ -127,51 +127,30 @@ button:disabled {
 }
 
 .status-strip {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1px;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--line);
-  margin-bottom: 24px;
+  display: inline-grid;
+  min-width: min(360px, 100%);
+  margin-bottom: 16px;
 }
 
 .status-strip > div {
   display: grid;
-  gap: 4px;
-  min-height: 82px;
-  padding: 16px;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: rgba(23, 27, 34, 0.92);
 }
 
 .status-strip strong {
-  font-size: 17px;
+  font-size: 14px;
 }
 
 .status-strip span:not(.label) {
+  grid-column: 1 / -1;
   color: var(--muted);
-  font-size: 13px;
-}
-
-.scoreboard-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 24px;
-  align-items: start;
-  margin-bottom: 28px;
-}
-
-.scoreboard-grid aside {
-  position: sticky;
-  top: 16px;
-}
-
-.game-list {
-  max-height: min(620px, calc(100vh - 180px));
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-color: var(--line) transparent;
+  font-size: 12px;
 }
 
 .section-title {
@@ -187,29 +166,9 @@ button:disabled {
   font-size: 13px;
 }
 
-.team-list,
-.game-list,
 .matchup-grid {
   display: grid;
   gap: 10px;
-}
-
-.team-row {
-  display: grid;
-  grid-template-columns: 34px 44px minmax(0, 1fr) 90px 72px;
-  align-items: center;
-  gap: 12px;
-  min-height: 76px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(23, 27, 34, 0.9);
-}
-
-.rank {
-  color: var(--muted);
-  font-weight: 900;
-  text-align: center;
 }
 
 .avatar {
@@ -223,26 +182,6 @@ button:disabled {
   color: var(--green);
   font-size: 13px;
   font-weight: 900;
-}
-
-.team-main {
-  min-width: 0;
-}
-
-.team-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 900;
-}
-
-.team-sub {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 13px;
 }
 
 .score-block {
@@ -266,12 +205,6 @@ button:disabled {
   line-height: 1;
 }
 
-.audit-button {
-  height: 34px;
-  padding: 0 10px;
-}
-
-.game-card,
 .matchup-card {
   padding: 14px;
   border: 1px solid var(--line);
@@ -279,7 +212,6 @@ button:disabled {
   background: rgba(23, 27, 34, 0.9);
 }
 
-.game-head,
 .matchup-head {
   display: flex;
   justify-content: space-between;
@@ -289,34 +221,8 @@ button:disabled {
   margin-bottom: 12px;
 }
 
-.game-head strong,
 .matchup-head {
   color: var(--text);
-}
-
-.game-scoreline {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.game-team {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 10px;
-  background: var(--panel-2);
-  border-radius: 6px;
-}
-
-.game-team strong {
-  color: var(--green);
-}
-
-.active-drive {
-  margin-top: 12px;
-  color: var(--gold);
-  font-size: 13px;
 }
 
 .matchup-grid {
@@ -534,16 +440,10 @@ dialog::backdrop {
 }
 
 @media (max-width: 1050px) {
-  .scoreboard-grid,
   .matchup-grid,
   .audit-columns {
     grid-template-columns: 1fr;
   }
-
-  .status-strip {
-    grid-template-columns: 1fr;
-  }
-
   .audit-total-row {
     grid-template-columns: 1fr;
   }
@@ -569,22 +469,7 @@ dialog::backdrop {
     width: 100%;
   }
 
-  .team-row {
-    grid-template-columns: 28px 40px minmax(0, 1fr) 76px;
-  }
-
-  .team-row .avatar {
-    width: 40px;
-    height: 40px;
-  }
-
-  .team-row .audit-button {
-    grid-column: 3 / -1;
-    justify-self: stretch;
-    text-align: left;
-  }
-
-  .team-row .audit-button {
-    grid-column: 1 / -1;
+  .status-strip {
+    display: grid;
   }
 }
