@@ -4,30 +4,25 @@ The app is a plain Node web service. It serves the frontend and proxies ESPN/Sle
 
 ## Recommended: Render
 
-The current GitHub repository is a multi-project repo:
+The public app repository is:
 
-`https://github.com/reidmojo/codex_projects`
-
-The app lives in:
-
-`dst-live-scoreboard`
+`https://github.com/reidmojo/dst-live-scoreboard`
 
 ### Option A: Manual Web Service
 
-1. In Render, create a new Web Service from `reidmojo/codex_projects`.
-2. Set the Root Directory to `dst-live-scoreboard`.
-3. Use:
+1. In Render, create a new Web Service from `reidmojo/dst-live-scoreboard`.
+2. Use:
    - Runtime: `Node`
    - Build Command: `npm install`
    - Start Command: `npm start`
-4. Set environment variables:
+3. Set environment variables:
    - `SLEEPER_LEAGUE_ID=1239299227176157184`
    - `PUBLIC_PATH=/is-it-whiskey-dst-live`
-5. Open the generated Render URL plus `/is-it-whiskey-dst-live`.
+4. Open the generated Render URL plus `/is-it-whiskey-dst-live`.
 
 ### Option B: Blueprint
 
-Use the root-level `render.yaml` in this repository as a Render Blueprint. It points Render at `dst-live-scoreboard` with the same build/start commands and environment variables above.
+Use the root-level `render.yaml` in this repository as a Render Blueprint. It uses the same build/start commands and environment variables above.
 
 ## Notes
 

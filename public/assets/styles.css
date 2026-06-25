@@ -277,6 +277,23 @@ button:disabled {
   background: rgba(23, 27, 34, 0.7);
 }
 
+.site-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+}
+
+.site-footer a {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.site-footer a:hover {
+  color: var(--green);
+}
+
 .error {
   color: var(--red);
 }

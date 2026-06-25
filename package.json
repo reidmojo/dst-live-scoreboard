@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "description": "Live custom DST scoring dashboard for a Sleeper fantasy league.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reidmojo/dst-live-scoreboard.git"
+  },
   "type": "module",
   "scripts": {
     "start": "node src/server.js"
