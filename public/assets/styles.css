@@ -136,7 +136,7 @@ button:disabled {
   display: grid;
   grid-template-columns: auto auto;
   align-items: baseline;
-  gap: 4px 10px;
+  gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -145,12 +145,6 @@ button:disabled {
 
 .status-strip strong {
   font-size: 14px;
-}
-
-.status-strip span:not(.label) {
-  grid-column: 1 / -1;
-  color: var(--muted);
-  font-size: 12px;
 }
 
 .section-title {
@@ -206,23 +200,11 @@ button:disabled {
 }
 
 .matchup-card {
-  padding: 14px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(23, 27, 34, 0.9);
-}
-
-.matchup-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-  font-size: 13px;
-  margin-bottom: 12px;
-}
-
-.matchup-head {
-  color: var(--text);
+  overflow: hidden;
 }
 
 .matchup-grid {

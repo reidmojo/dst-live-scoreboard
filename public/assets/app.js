@@ -7,7 +7,6 @@ const state = {
 const els = {
   leagueName: document.querySelector("#leagueName"),
   updatedAt: document.querySelector("#updatedAt"),
-  weekLabel: document.querySelector("#weekLabel"),
   seasonSelect: document.querySelector("#seasonSelect"),
   weekSelect: document.querySelector("#weekSelect"),
   refreshButton: document.querySelector("#refreshButton"),
@@ -61,8 +60,7 @@ function render() {
   els.leagueName.textContent = data.league.name || "League";
   els.seasonSelect.value = data.selected.season;
   els.weekSelect.value = String(data.selected.week);
-  els.updatedAt.textContent = formatTime(data.generatedAt);
-  els.weekLabel.textContent = `${data.selected.season} Week ${data.selected.week}`;
+  els.updatedAt.textContent = formatDateTime(data.generatedAt);
   syncWeekOptions(data.weeks, data.selected.week);
 
   renderMatchups(data.matchups);
@@ -76,10 +74,6 @@ function renderMatchups(matchups) {
     const highScore = Math.max(...matchup.teams.map((team) => Number(team.projectedCustomTotal || 0)));
     const rows = matchup.teams.map((team) => matchupTeamHtml(team, highScore)).join("");
     card.innerHTML = `
-      <div class="matchup-head">
-        <span>Matchup ${escapeHtml(matchup.id.replace("solo-", "Roster "))}</span>
-        <span>${matchup.teams.length === 2 ? scoreGap(matchup.teams) : "bye"}</span>
-      </div>
       <div class="matchup-teams">${rows}</div>
     `;
     card.querySelectorAll("[data-roster-id]").forEach((button) => {
@@ -105,12 +99,6 @@ function matchupTeamHtml(team, highScore) {
       </div>
     </button>
   `;
-}
-
-function scoreGap(teams) {
-  if (teams.length !== 2) return "";
-  const gap = Math.abs(Number(teams[0].projectedCustomTotal || 0) - Number(teams[1].projectedCustomTotal || 0));
-  return `${fmt(gap)} gap`;
 }
 
 function openAudit(team) {
@@ -239,8 +227,14 @@ function fmt(value) {
   return number.toLocaleString(undefined, { minimumFractionDigits: number % 1 ? 1 : 0, maximumFractionDigits: 2 });
 }
 
-function formatTime(value) {
-  return new Date(value).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+function formatDateTime(value) {
+  return new Date(value).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit"
+  });
 }
 
 function signed(value) {
