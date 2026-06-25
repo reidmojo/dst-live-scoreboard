@@ -394,7 +394,7 @@ button:disabled {
 }
 
 dialog {
-  width: min(780px, calc(100vw - 32px));
+  width: min(1120px, calc(100vw - 32px));
   max-height: min(760px, calc(100vh - 32px));
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -418,8 +418,76 @@ dialog::backdrop {
 
 .audit-list {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   padding: 18px;
+}
+
+.audit-total-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.audit-total-row > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  background: var(--panel-2);
+}
+
+.audit-total-row span,
+.audit-column-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.audit-total-row strong {
+  color: var(--green);
+  font-size: 26px;
+  line-height: 1;
+}
+
+.audit-total-row strong.negative {
+  color: var(--red);
+}
+
+.audit-total-row strong.positive {
+  color: var(--green);
+}
+
+.audit-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.audit-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.audit-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(31, 36, 45, 0.72);
+}
+
+.audit-column-head strong {
+  color: var(--green);
+  font-size: 20px;
 }
 
 .audit-event {
@@ -444,6 +512,10 @@ dialog::backdrop {
   color: var(--green);
 }
 
+.audit-event.old-event {
+  background: rgba(31, 36, 45, 0.62);
+}
+
 .audit-event p {
   grid-column: 1 / -1;
   color: #d8dee8;
@@ -457,11 +529,16 @@ dialog::backdrop {
 
 @media (max-width: 1050px) {
   .scoreboard-grid,
-  .matchup-grid {
+  .matchup-grid,
+  .audit-columns {
     grid-template-columns: 1fr;
   }
 
   .status-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-total-row {
     grid-template-columns: 1fr;
   }
 }

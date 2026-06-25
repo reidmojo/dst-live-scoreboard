@@ -23,12 +23,13 @@ const els = {
 boot();
 
 async function boot() {
-  for (let week = 1; week <= 18; week += 1) {
+  for (let week = 1; week <= 17; week += 1) {
     const option = document.createElement("option");
     option.value = String(week);
     option.textContent = `Week ${week}`;
     els.weekSelect.append(option);
   }
+  els.weekSelect.value = "17";
 
   els.refreshButton.addEventListener("click", loadDashboard);
   els.weekSelect.addEventListener("change", loadDashboard);
@@ -64,6 +65,7 @@ function render() {
   els.weekSelect.value = String(data.selected.week);
   els.updatedAt.textContent = formatTime(data.generatedAt);
   els.weekLabel.textContent = `${data.selected.season} Week ${data.selected.week}`;
+  syncWeekOptions(data.weeks, data.selected.week);
 
   renderLeagueBoard(data.teams);
   renderGames(data.nflGames);
@@ -174,22 +176,99 @@ function scoreGap(teams) {
 
 function openAudit(team) {
   els.auditTitle.textContent = `${team.dstTeam || "No DEF"} · ${team.teamName}`;
-  if (!team.dstComponents.length) {
-    els.auditBody.innerHTML = `<div class="empty">No custom DST drive events have been scored yet for this selected week.</div>`;
-  } else {
-    els.auditBody.innerHTML = team.dstComponents.map((event) => `
-      <article class="audit-event">
-        <div>
-          <strong>${escapeHtml(event.label)}</strong>
-          <span>${escapeHtml(event.offense)} drive · Q${event.period || "-"} ${escapeHtml(event.clock || "")}</span>
+  const newAudit = team.newDstAudit || { total: team.customDstPoints, components: team.dstComponents || [] };
+  const oldAudit = team.oldDstAudit || { total: team.sleeperDstPoints, components: [] };
+  const impact = Number(newAudit.total || 0) - Number(oldAudit.total || 0);
+  els.auditBody.innerHTML = `
+    <div class="audit-total-row">
+      <div>
+        <span>New DST</span>
+        <strong>${signed(newAudit.total)}</strong>
+      </div>
+      <div>
+        <span>Old DST</span>
+        <strong>${signed(oldAudit.total)}</strong>
+      </div>
+      <div>
+        <span>Team impact</span>
+        <strong class="${impact >= 0 ? "positive" : "negative"}">${signed(impact)}</strong>
+      </div>
+    </div>
+    <div class="audit-columns">
+      <section class="audit-column">
+        <div class="audit-column-head">
+          <span>New scoring</span>
+          <strong>${signed(newAudit.total)}</strong>
         </div>
-        <b>${event.points > 0 ? "+" : ""}${fmt(event.points)}</b>
-        <p>${escapeHtml(event.description || event.result || "")}</p>
-        ${event.takeover ? `<small>Takeover: ${escapeHtml(event.takeover)}</small>` : ""}
-      </article>
-    `).join("");
-  }
+        ${newScoringRows(newAudit.components)}
+      </section>
+      <section class="audit-column">
+        <div class="audit-column-head">
+          <span>Old scoring</span>
+          <strong>${signed(oldAudit.total)}</strong>
+        </div>
+        ${oldScoringRows(oldAudit.components)}
+      </section>
+    </div>
+  `;
   els.auditDialog.showModal();
+}
+
+function syncWeekOptions(weeks, selectedWeek) {
+  if (!Array.isArray(weeks) || !weeks.length) return;
+  const currentValues = [...els.weekSelect.options].map((option) => Number(option.value));
+  if (currentValues.join(",") === weeks.join(",")) return;
+  els.weekSelect.innerHTML = "";
+  for (const week of weeks) {
+    const option = document.createElement("option");
+    option.value = String(week);
+    option.textContent = `Week ${week}`;
+    els.weekSelect.append(option);
+  }
+  els.weekSelect.value = String(selectedWeek);
+}
+
+function newScoringRows(components) {
+  if (!components?.length) {
+    return `<div class="empty">No custom DST drive events have been scored for this selected week.</div>`;
+  }
+  return components.map((event) => `
+    <article class="audit-event">
+      <div>
+        <strong>${escapeHtml(event.label)}</strong>
+        <span>${escapeHtml(event.offense)} drive · Q${event.period || "-"} ${escapeHtml(event.clock || "")}</span>
+      </div>
+      <b>${signed(event.points)}</b>
+      <p>${escapeHtml(event.description || event.result || "")}</p>
+      ${event.takeover ? `<small>Takeover: ${escapeHtml(event.takeover)}</small>` : ""}
+    </article>
+  `).join("");
+}
+
+function oldScoringRows(components) {
+  if (!components?.length) {
+    return `<div class="empty">No old-scoring state is available for this selected week.</div>`;
+  }
+  return components.map((event) => `
+    <article class="audit-event old-event">
+      <div>
+        <strong>${escapeHtml(event.label)}</strong>
+        <span>${oldEventDetail(event)}</span>
+      </div>
+      <b>${signed(event.points)}</b>
+      ${event.description ? `<p>${escapeHtml(event.description)}</p>` : ""}
+    </article>
+  `).join("");
+}
+
+function oldEventDetail(event) {
+  if (event.kind === "points_allowed") return "Score tier";
+  if (event.kind === "sleeper_reconciliation") return "Sleeper reconciliation";
+  if (event.kind === "sleeper_dst_total") return "Sleeper live scoring";
+  if (event.count && event.unit !== undefined) {
+    return `${fmt(event.count)} × ${signed(event.unit)}`;
+  }
+  return "Sleeper scoring";
 }
 
 function avatarHtml(team) {

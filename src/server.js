@@ -14,6 +14,7 @@ const OBSCURE_PATH = process.env.PUBLIC_PATH || "/is-it-whiskey-dst-live";
 const SLEEPER_BASE = "https://api.sleeper.app/v1";
 const ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const ESPN_SUMMARY = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary";
+const MAX_FANTASY_WEEK = 17;
 
 const cache = new Map();
 
@@ -60,7 +61,8 @@ async function handleDashboard(url, res) {
   const sleeperState = await fetchJson(`${SLEEPER_BASE}/state/nfl`, { ttlMs: 60_000 });
   const league = await fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}`, { ttlMs: 300_000 });
   const season = url.searchParams.get("season") || league.season || sleeperState.league_season || sleeperState.season;
-  const week = Number(url.searchParams.get("week") || defaultWeek(sleeperState, league));
+  const requestedWeek = Number(url.searchParams.get("week") || 0);
+  const week = clampWeek(requestedWeek || defaultWeek(sleeperState, league));
   const [rosters, users, matchups, scoreboard] = await Promise.all([
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/rosters`, { ttlMs: 300_000 }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/users`, { ttlMs: 300_000 }),
@@ -78,7 +80,7 @@ async function handleDashboard(url, res) {
     })
   );
 
-  const espnScores = scoreWeekFromEspn(events, summaries);
+  const espnScores = scoreWeekFromEspn(events, summaries, league.scoring_settings || {});
   const teams = buildLeagueTeams({ rosters, users, matchups: matchups || [], espnScores });
   const matchupsView = buildMatchups(teams);
 
@@ -110,7 +112,7 @@ async function handleDashboard(url, res) {
       startWeek: league.settings?.start_week
     },
     selected: { season, week },
-    weeks: Array.from({ length: 18 }, (_, index) => index + 1),
+    weeks: Array.from({ length: MAX_FANTASY_WEEK }, (_, index) => index + 1),
     teams,
     matchups: matchupsView,
     nflGames: espnScores.games,
@@ -120,8 +122,13 @@ async function handleDashboard(url, res) {
 
 function defaultWeek(state, league) {
   const activeWeek = Number(state.display_week || state.week || 0);
-  if (activeWeek > 0) return activeWeek;
-  return Number(league.settings?.last_scored_leg || league.settings?.start_week || 1);
+  if (activeWeek > 0) return clampWeek(activeWeek);
+  return clampWeek(Number(league.settings?.last_scored_leg || league.settings?.start_week || MAX_FANTASY_WEEK));
+}
+
+function clampWeek(week) {
+  if (!Number.isFinite(week) || week < 1) return MAX_FANTASY_WEEK;
+  return Math.min(Math.max(Math.trunc(week), 1), MAX_FANTASY_WEEK);
 }
 
 function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
@@ -136,10 +143,18 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
       const dstStarterIndex = starters.findIndex((playerId) => isDefenseId(playerId));
       const dstTeam = dstStarterIndex >= 0 ? starters[dstStarterIndex] : "";
       const sleeperDstPoints = dstStarterIndex >= 0 ? Number(startersPoints[dstStarterIndex] || 0) : 0;
-      const customDst = espnScores.dstScores[dstTeam] || { points: 0, components: [], games: [] };
+      const customDst = espnScores.dstScores[dstTeam] || { points: 0, components: [], games: [], oldComponents: [], oldEstimatedPoints: 0 };
       const sleeperTotal = Number(matchup.points ?? roster.settings?.fpts ?? 0);
       const nonDstSleeperTotal = round(sleeperTotal - sleeperDstPoints);
       const projectedCustomTotal = round(nonDstSleeperTotal + customDst.points);
+      const newDstAudit = {
+        total: round(customDst.points),
+        components: customDst.components || []
+      };
+      const oldDstAudit = {
+        total: round(sleeperDstPoints),
+        components: reconcileOldDstComponents(customDst.oldComponents || [], sleeperDstPoints, customDst.oldEstimatedPoints || 0)
+      };
 
       return {
         rosterId: roster.roster_id,
@@ -156,11 +171,38 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
         dstTeam,
         customDstPoints: round(customDst.points),
         customDstDelta: round(customDst.points - sleeperDstPoints),
+        newDstAudit,
+        oldDstAudit,
         dstComponents: customDst.components || [],
         dstGames: customDst.games || []
       };
     })
     .sort((a, b) => b.projectedCustomTotal - a.projectedCustomTotal);
+}
+
+function reconcileOldDstComponents(components, sleeperDstPoints, estimatedPoints) {
+  const rows = [...components];
+  if (!rows.length) {
+    return [
+      {
+        kind: "sleeper_dst_total",
+        label: "Sleeper D/ST total",
+        points: round(sleeperDstPoints),
+        description: "Sleeper's live old-scoring total for this starting D/ST."
+      }
+    ];
+  }
+
+  const diff = round(Number(sleeperDstPoints || 0) - Number(estimatedPoints || 0));
+  if (diff !== 0) {
+    rows.push({
+      kind: "sleeper_reconciliation",
+      label: "Sleeper live adjustment",
+      points: diff,
+      description: "Reconciles ESPN-derived scoring state to Sleeper's authoritative live D/ST total."
+    });
+  }
+  return rows;
 }
 
 function buildMatchups(teams) {

@@ -16,19 +16,21 @@ export function teamAbbr(team) {
   return team?.abbreviation || team?.team?.abbreviation || "";
 }
 
-export function scoreWeekFromEspn(events, summaries) {
+export function scoreWeekFromEspn(events, summaries, oldScoring = {}) {
   const games = [];
   const byTeam = new Map();
 
   for (const event of events) {
     const summary = summaries.get(event.id);
-    const game = normalizeGame(event, summary);
+    const game = normalizeGame(event, summary, oldScoring);
     games.push(game);
 
     for (const score of game.teamScores) {
       const current = byTeam.get(score.team) || emptyTeamScore(score.team);
       current.points += score.points;
       current.components.push(...score.components);
+      current.oldComponents.push(...(score.oldAudit?.components || []));
+      current.oldEstimatedPoints += score.oldAudit?.estimatedPoints || 0;
       current.games.push({
         gameId: game.id,
         opponent: score.opponent,
@@ -41,6 +43,7 @@ export function scoreWeekFromEspn(events, summaries) {
 
   for (const score of byTeam.values()) {
     score.points = round(score.points);
+    score.oldEstimatedPoints = round(score.oldEstimatedPoints);
     score.components.sort((a, b) => a.sequence - b.sequence);
   }
 
@@ -55,11 +58,13 @@ function emptyTeamScore(team) {
     team,
     points: 0,
     components: [],
+    oldComponents: [],
+    oldEstimatedPoints: 0,
     games: []
   };
 }
 
-function normalizeGame(event, summary) {
+function normalizeGame(event, summary, oldScoring) {
   const competition = event.competitions?.[0] || summary?.header?.competitions?.[0] || {};
   const competitors = competition.competitors || [];
   const teamInfo = competitors.map((competitor) => ({
@@ -107,6 +112,14 @@ function normalizeGame(event, summary) {
 
   for (const score of teamScores) {
     score.points = round(score.points);
+    score.oldAudit = buildOldDstAudit({
+      team: score.team,
+      opponent: score.opponent,
+      teamInfo,
+      drives,
+      teamsByAbbr,
+      oldScoring
+    });
   }
 
   return {
@@ -122,6 +135,96 @@ function normalizeGame(event, summary) {
     activeDrive: activeDrive ? summarizeDrive(activeDrive, teamsById) : null,
     teamScores
   };
+}
+
+function buildOldDstAudit({ team, opponent, teamInfo, drives, teamsByAbbr, oldScoring }) {
+  const opponentInfo = teamInfo.find((candidate) => candidate.abbreviation === opponent) || {};
+  const pointsAllowed = Number(opponentInfo.score || 0);
+  const components = [];
+  const add = (kind, label, count, unit, description = "") => {
+    if (!count || !unit) return;
+    components.push({
+      kind,
+      label,
+      count,
+      unit,
+      points: round(count * unit),
+      description
+    });
+  };
+
+  const pointsAllowedPoints = pointsAllowedComponent(pointsAllowed, oldScoring);
+  components.push({
+    kind: "points_allowed",
+    label: `Points allowed: ${pointsAllowed}`,
+    count: 1,
+    unit: pointsAllowedPoints,
+    points: pointsAllowedPoints,
+    description: `${opponent} scoreboard points against ${team}.`
+  });
+
+  const counts = {
+    sacks: 0,
+    interceptions: 0,
+    forcedFumbles: 0,
+    fumbleRecoveries: 0,
+    touchdowns: 0,
+    safeties: 0,
+    blockedKicks: 0
+  };
+
+  for (const drive of drives) {
+    const offense = drive.team?.abbreviation || "";
+    const defense = teamInfo.find((candidate) => candidate.abbreviation && candidate.abbreviation !== offense)?.abbreviation || "";
+    if (defense !== team) continue;
+
+    const result = String(drive.result || drive.shortDisplayResult || drive.displayResult || "").toUpperCase();
+    if (result.includes("SAFETY")) counts.safeties += 1;
+    if (hasDstTouchdown(drive, team, teamsByAbbr)) counts.touchdowns += 1;
+
+    for (const play of drive.plays || []) {
+      const text = `${play.type?.text || ""} ${play.text || ""}`.toUpperCase();
+      if (/\bSACKED\b|\bSACK\b/.test(text)) counts.sacks += 1;
+      if (text.includes("INTERCEPTED")) counts.interceptions += 1;
+      if (text.includes("FUMBLES")) counts.forcedFumbles += 1;
+      if (text.includes("FUMBLES") && recoveredByDefense(text, team, offense)) counts.fumbleRecoveries += 1;
+      if (text.includes("BLOCKED")) counts.blockedKicks += 1;
+    }
+  }
+
+  add("sacks", "Sacks", counts.sacks, numberSetting(oldScoring, "sack", 1));
+  add("interceptions", "Interceptions", counts.interceptions, numberSetting(oldScoring, "int", 2));
+  add("forced_fumbles", "Forced fumbles", counts.forcedFumbles, numberSetting(oldScoring, "ff", 1));
+  add("fumble_recoveries", "Fumble recoveries", counts.fumbleRecoveries, numberSetting(oldScoring, "fum_rec", 2));
+  add("dst_touchdowns", "D/ST touchdowns", counts.touchdowns, numberSetting(oldScoring, "def_td", 6));
+  add("safeties", "Safeties", counts.safeties, numberSetting(oldScoring, "safe", 2));
+  add("blocked_kicks", "Blocked kicks", counts.blockedKicks, numberSetting(oldScoring, "blk_kick", 2));
+
+  return {
+    estimatedPoints: round(components.reduce((sum, component) => sum + Number(component.points || 0), 0)),
+    components
+  };
+}
+
+function pointsAllowedComponent(pointsAllowed, oldScoring) {
+  if (pointsAllowed === 0) return numberSetting(oldScoring, "pts_allow_0", 10);
+  if (pointsAllowed <= 6) return numberSetting(oldScoring, "pts_allow_1_6", 7);
+  if (pointsAllowed <= 13) return numberSetting(oldScoring, "pts_allow_7_13", 4);
+  if (pointsAllowed <= 20) return numberSetting(oldScoring, "pts_allow_14_20", 1);
+  if (pointsAllowed <= 27) return numberSetting(oldScoring, "pts_allow_21_27", 0);
+  if (pointsAllowed <= 34) return numberSetting(oldScoring, "pts_allow_28_34", -1);
+  return numberSetting(oldScoring, "pts_allow_35p", -4);
+}
+
+function numberSetting(settings, key, fallback) {
+  const value = Number(settings?.[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function recoveredByDefense(text, defense, offense) {
+  if (text.includes(`RECOVERED BY ${defense}-`)) return true;
+  if (text.includes(`RECOVERED BY ${offense}-`)) return false;
+  return text.includes("RECOVERED BY") && !text.includes("RECOVERED BY TEAM");
 }
 
 function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence }) {
