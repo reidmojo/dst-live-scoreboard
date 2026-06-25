@@ -134,7 +134,7 @@ button:disabled {
 
 .status-strip > div {
   display: grid;
-  grid-template-columns: auto auto;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: baseline;
   gap: 10px;
   padding: 10px 12px;
@@ -145,6 +145,19 @@ button:disabled {
 
 .status-strip strong {
   font-size: 14px;
+}
+
+.status-detail {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-detail.stale {
+  color: var(--gold);
 }
 
 .section-title {
@@ -470,5 +483,13 @@ dialog::backdrop {
 
   .status-strip {
     display: grid;
+  }
+
+  .status-strip > div {
+    grid-template-columns: auto 1fr;
+  }
+
+  .status-detail {
+    grid-column: 1 / -1;
   }
 }

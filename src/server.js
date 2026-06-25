@@ -15,11 +15,16 @@ const SLEEPER_BASE = "https://api.sleeper.app/v1";
 const ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const ESPN_SUMMARY = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary";
 const MAX_FANTASY_WEEK = 17;
+const FIRST_SUPPORTED_SEASON = 2025;
+const EASTERN_TIME_ZONE = "America/New_York";
+const LIVE_POLL_INTERVAL_MS = 15_000;
+const NORMAL_POLL_INTERVAL_MS = 30_000;
 const SLEEPER_TO_ESPN_DEFENSE = {
   WAS: "WSH"
 };
 
 const cache = new Map();
+const dashboardCache = new Map();
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -61,16 +66,34 @@ server.listen(PORT, () => {
 });
 
 async function handleDashboard(url, res) {
-  const sleeperState = await fetchJson(`${SLEEPER_BASE}/state/nfl`, { ttlMs: 60_000 });
-  const league = await fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}`, { ttlMs: 300_000 });
-  const season = url.searchParams.get("season") || league.season || sleeperState.league_season || sleeperState.season;
+  const dashboardKey = dashboardCacheKey(url);
+  try {
+    const dashboard = await buildDashboard(url);
+    dashboardCache.set(dashboardKey, { time: Date.now(), value: dashboard });
+    json(res, dashboard);
+  } catch (error) {
+    const cached = dashboardCache.get(dashboardKey) || latestDashboard();
+    if (!cached) throw error;
+    json(res, markDashboardStale(cached.value, error));
+  }
+}
+
+async function buildDashboard(url) {
+  const requestState = { warnings: [] };
+  const sleeperState = await fetchJson(`${SLEEPER_BASE}/state/nfl`, { ttlMs: 60_000, requestState, label: "Sleeper NFL state" });
+  const league = await fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}`, { ttlMs: 300_000, requestState, label: "Sleeper league" });
+  const seasons = seasonOptions(sleeperState, league);
+  const requestedSeason = Number(url.searchParams.get("season") || 0);
+  const season = String(selectSeason(requestedSeason, seasons));
+  const defaultSelectedWeek = defaultWeek(sleeperState, league);
+  const weeks = weekOptionsForSeason(Number(season), seasons.at(-1), defaultSelectedWeek);
   const requestedWeek = Number(url.searchParams.get("week") || 0);
-  const week = clampWeek(requestedWeek || defaultWeek(sleeperState, league));
+  const week = selectWeek(requestedWeek, weeks);
   const [rosters, users, matchups, scoreboard] = await Promise.all([
-    fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/rosters`, { ttlMs: 300_000 }),
-    fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/users`, { ttlMs: 300_000 }),
-    fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/matchups/${week}`, { ttlMs: 30_000, allow404: true }),
-    fetchJson(`${ESPN_SCOREBOARD}?seasontype=2&week=${week}&dates=${season}`, { ttlMs: 20_000 })
+    fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/rosters`, { ttlMs: 300_000, requestState, label: "Sleeper rosters" }),
+    fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/users`, { ttlMs: 300_000, requestState, label: "Sleeper users" }),
+    fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/matchups/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper matchups" }),
+    fetchJson(`${ESPN_SCOREBOARD}?seasontype=2&week=${week}&dates=${season}`, { ttlMs: 20_000, requestState, label: "ESPN scoreboard" })
   ]);
 
   const events = scoreboard.events || [];
@@ -78,7 +101,12 @@ async function handleDashboard(url, res) {
   await Promise.all(
     events.map(async (event) => {
       if (!event.competitions?.[0]?.playByPlayAvailable && event.status?.type?.state === "pre") return;
-      const summary = await fetchJson(`${ESPN_SUMMARY}?event=${event.id}`, { ttlMs: 20_000, allow404: true });
+      const summary = await fetchJson(`${ESPN_SUMMARY}?event=${event.id}`, {
+        ttlMs: 20_000,
+        allow404: true,
+        requestState,
+        label: `ESPN summary ${event.id}`
+      });
       if (summary) summaries.set(event.id, summary);
     })
   );
@@ -86,9 +114,19 @@ async function handleDashboard(url, res) {
   const espnScores = scoreWeekFromEspn(events, summaries, league.scoring_settings || {});
   const teams = buildLeagueTeams({ rosters, users, matchups: matchups || [], espnScores });
   const matchupsView = buildMatchups(teams);
+  const liveGameCount = countLiveGames(events);
+  const pollIntervalMs = liveGameCount > 0 ? LIVE_POLL_INTERVAL_MS : NORMAL_POLL_INTERVAL_MS;
+  const correction = correctionStatus(events);
 
-  json(res, {
+  return {
     generatedAt: new Date().toISOString(),
+    health: {
+      ok: requestState.warnings.length === 0,
+      stale: requestState.warnings.length > 0,
+      warnings: requestState.warnings,
+      liveGameCount,
+      pollIntervalMs
+    },
     source: {
       liveDriveData: "ESPN site APIs",
       leagueData: "Sleeper API",
@@ -115,12 +153,14 @@ async function handleDashboard(url, res) {
       startWeek: league.settings?.start_week
     },
     selected: { season, week },
-    weeks: Array.from({ length: MAX_FANTASY_WEEK }, (_, index) => index + 1),
+    seasons,
+    weeks,
+    correction,
     teams,
     matchups: matchupsView,
     nflGames: espnScores.games,
     dstScores: espnScores.dstScores
-  });
+  };
 }
 
 function defaultWeek(state, league) {
@@ -132,6 +172,138 @@ function defaultWeek(state, league) {
 function clampWeek(week) {
   if (!Number.isFinite(week) || week < 1) return MAX_FANTASY_WEEK;
   return Math.min(Math.max(Math.trunc(week), 1), MAX_FANTASY_WEEK);
+}
+
+function seasonOptions(state, league) {
+  const includeStateSeason = state.season_type && state.season_type !== "off";
+  const candidates = [
+    FIRST_SUPPORTED_SEASON,
+    Number(league.season),
+    ...(includeStateSeason ? [Number(state.league_season), Number(state.season)] : [])
+  ].filter((season) => Number.isFinite(season) && season >= FIRST_SUPPORTED_SEASON);
+  const latest = Math.max(...candidates);
+  return Array.from({ length: latest - FIRST_SUPPORTED_SEASON + 1 }, (_, index) => FIRST_SUPPORTED_SEASON + index);
+}
+
+function selectSeason(requestedSeason, seasons) {
+  if (seasons.includes(requestedSeason)) return requestedSeason;
+  return seasons.at(-1) || FIRST_SUPPORTED_SEASON;
+}
+
+function weekOptionsForSeason(season, latestSeason, defaultSelectedWeek) {
+  const maxWeek = season < latestSeason ? MAX_FANTASY_WEEK : clampWeek(defaultSelectedWeek);
+  return Array.from({ length: maxWeek }, (_, index) => index + 1);
+}
+
+function selectWeek(requestedWeek, weeks) {
+  if (weeks.includes(requestedWeek)) return requestedWeek;
+  return weeks.at(-1) || MAX_FANTASY_WEEK;
+}
+
+function countLiveGames(events) {
+  return events.filter((event) => event.status?.type?.state === "in").length;
+}
+
+function correctionStatus(events) {
+  if (!events.length) {
+    return {
+      status: "unknown",
+      label: "No NFL games found for selected week",
+      finalizesAt: null
+    };
+  }
+  if (events.some((event) => event.status?.type?.state === "in")) {
+    return {
+      status: "live",
+      label: "Live; corrections pending",
+      finalizesAt: null
+    };
+  }
+  if (events.some((event) => event.status?.type?.state !== "post")) {
+    return {
+      status: "scheduled",
+      label: "Scheduled; scoring will remain provisional",
+      finalizesAt: null
+    };
+  }
+
+  const finalizesAt = correctionCutoff(events);
+  if (!finalizesAt) {
+    return {
+      status: "provisional",
+      label: "Final game complete; correction cutoff unavailable",
+      finalizesAt: null
+    };
+  }
+
+  const finalized = Date.now() >= finalizesAt.getTime();
+  return {
+    status: finalized ? "finalized" : "provisional",
+    label: finalized ? "Final after Wednesday correction window" : "Provisional until Wednesday correction window",
+    finalizesAt: finalizesAt.toISOString()
+  };
+}
+
+function correctionCutoff(events) {
+  const eventDates = events
+    .map((event) => new Date(event.date))
+    .filter((date) => Number.isFinite(date.getTime()));
+  if (!eventDates.length) return null;
+  const latestKickoff = new Date(Math.max(...eventDates.map((date) => date.getTime())));
+  const local = easternParts(latestKickoff);
+  const daysUntilWednesday = ((3 - local.weekday + 7) % 7) || 7;
+  const cutoffDay = local.day + daysUntilWednesday;
+  return easternTimeToUtc(local.year, local.month, cutoffDay, 0, 0, 0);
+}
+
+function easternParts(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EASTERN_TIME_ZONE,
+    weekday: "short",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric"
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const weekdayByName = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return {
+    year: Number(value.year),
+    month: Number(value.month),
+    day: Number(value.day),
+    weekday: weekdayByName[value.weekday]
+  };
+}
+
+function easternTimeToUtc(year, month, day, hour, minute, second) {
+  let utc = Date.UTC(year, month - 1, day, hour, minute, second);
+  for (let index = 0; index < 2; index += 1) {
+    const offset = timeZoneOffsetMs(new Date(utc), EASTERN_TIME_ZONE);
+    utc = Date.UTC(year, month - 1, day, hour, minute, second) - offset;
+  }
+  return new Date(utc);
+}
+
+function timeZoneOffsetMs(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(value.year),
+    Number(value.month) - 1,
+    Number(value.day),
+    Number(value.hour) % 24,
+    Number(value.minute),
+    Number(value.second)
+  );
+  return asUtc - date.getTime();
 }
 
 function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
@@ -245,14 +417,62 @@ async function fetchJson(url, options = {}) {
   const cached = cache.get(url);
   if (cached && Date.now() - cached.time < ttlMs) return cached.value;
 
-  const response = await fetch(url, {
-    headers: { "accept": "application/json", "user-agent": "dst-live-scoreboard/0.1" }
+  try {
+    const response = await fetch(url, {
+      headers: { "accept": "application/json", "user-agent": "dst-live-scoreboard/0.1" }
+    });
+    if (options.allow404 && response.status === 404) return null;
+    if (!response.ok) throw new Error(`Fetch failed ${response.status}`);
+    const value = await response.json();
+    cache.set(url, { time: Date.now(), value });
+    return value;
+  } catch (error) {
+    if (cached) {
+      noteStaleFallback(options.requestState, options.label || url, cached.time, error);
+      return cached.value;
+    }
+    throw new Error(`${options.label || url} unavailable: ${error.message}`);
+  }
+}
+
+function noteStaleFallback(requestState, label, fetchedAt, error) {
+  if (!requestState) return;
+  requestState.warnings.push({
+    label,
+    fetchedAt: new Date(fetchedAt).toISOString(),
+    ageSeconds: Math.round((Date.now() - fetchedAt) / 1000),
+    message: `Using cached data because live fetch failed: ${error.message}`
   });
-  if (options.allow404 && response.status === 404) return null;
-  if (!response.ok) throw new Error(`Fetch failed ${response.status} for ${url}`);
-  const value = await response.json();
-  cache.set(url, { time: Date.now(), value });
-  return value;
+}
+
+function dashboardCacheKey(url) {
+  const season = url.searchParams.get("season") || "default";
+  const week = url.searchParams.get("week") || "default";
+  return `${season}:${week}`;
+}
+
+function latestDashboard() {
+  return [...dashboardCache.values()].sort((a, b) => b.time - a.time)[0];
+}
+
+function markDashboardStale(dashboard, error) {
+  const warning = {
+    label: "Dashboard",
+    fetchedAt: dashboard.generatedAt,
+    ageSeconds: Math.round((Date.now() - new Date(dashboard.generatedAt).getTime()) / 1000),
+    message: `Using last successful dashboard because refresh failed: ${error.message}`
+  };
+  return {
+    ...dashboard,
+    servedAt: new Date().toISOString(),
+    health: {
+      ...(dashboard.health || {}),
+      ok: false,
+      stale: true,
+      pollIntervalMs: NORMAL_POLL_INTERVAL_MS,
+      warnings: [...(dashboard.health?.warnings || []), warning]
+    }
+  };
 }
 
 async function serveStatic(pathname, res) {

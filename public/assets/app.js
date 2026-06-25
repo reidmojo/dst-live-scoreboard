@@ -1,12 +1,14 @@
 const state = {
   data: null,
   selectedTeam: null,
-  timer: null
+  timer: null,
+  hasLoaded: false
 };
 
 const els = {
   leagueName: document.querySelector("#leagueName"),
   updatedAt: document.querySelector("#updatedAt"),
+  statusDetail: document.querySelector("#statusDetail"),
   seasonSelect: document.querySelector("#seasonSelect"),
   weekSelect: document.querySelector("#weekSelect"),
   refreshButton: document.querySelector("#refreshButton"),
@@ -20,37 +22,36 @@ const els = {
 boot();
 
 async function boot() {
-  for (let week = 1; week <= 17; week += 1) {
-    const option = document.createElement("option");
-    option.value = String(week);
-    option.textContent = `Week ${week}`;
-    els.weekSelect.append(option);
-  }
-  els.weekSelect.value = "17";
-
   els.refreshButton.addEventListener("click", loadDashboard);
   els.weekSelect.addEventListener("change", loadDashboard);
   els.seasonSelect.addEventListener("change", loadDashboard);
   els.closeDialog.addEventListener("click", () => els.auditDialog.close());
 
   await loadDashboard();
-  state.timer = window.setInterval(loadDashboard, 30_000);
 }
 
 async function loadDashboard() {
   setLoading(true);
   try {
-    const season = encodeURIComponent(els.seasonSelect.value || "");
-    const week = encodeURIComponent(els.weekSelect.value || "");
-    const response = await fetch(`/api/dashboard?season=${season}&week=${week}`);
+    const response = await fetch(dashboardUrl());
     if (!response.ok) throw new Error(`Dashboard request failed: ${response.status}`);
     state.data = await response.json();
+    state.hasLoaded = true;
     render();
   } catch (error) {
     renderError(error);
   } finally {
     setLoading(false);
+    scheduleRefresh(state.data?.health?.pollIntervalMs || 30_000);
   }
+}
+
+function dashboardUrl() {
+  const params = new URLSearchParams();
+  if (state.hasLoaded && els.seasonSelect.value) params.set("season", els.seasonSelect.value);
+  if (state.hasLoaded && els.weekSelect.value) params.set("week", els.weekSelect.value);
+  const query = params.toString();
+  return query ? `/api/dashboard?${query}` : "/api/dashboard";
 }
 
 function render() {
@@ -58,12 +59,29 @@ function render() {
   if (!data) return;
 
   els.leagueName.textContent = data.league.name || "League";
+  syncSeasonOptions(data.seasons, data.selected.season);
+  syncWeekOptions(data.weeks, data.selected.week);
   els.seasonSelect.value = data.selected.season;
   els.weekSelect.value = String(data.selected.week);
-  els.updatedAt.textContent = formatDateTime(data.generatedAt);
-  syncWeekOptions(data.weeks, data.selected.week);
+  els.updatedAt.textContent = formatDateTime(data.servedAt || data.generatedAt);
+  els.statusDetail.textContent = statusDetail(data);
+  els.statusDetail.className = `status-detail ${data.health?.stale ? "stale" : ""}`;
 
   renderMatchups(data.matchups);
+}
+
+function scheduleRefresh(delayMs) {
+  window.clearTimeout(state.timer);
+  state.timer = window.setTimeout(loadDashboard, Number(delayMs || 30_000));
+}
+
+function statusDetail(data) {
+  const bits = [];
+  const pollSeconds = Math.round((data.health?.pollIntervalMs || 30_000) / 1000);
+  bits.push(data.health?.stale ? "Stale cache" : "Live refresh");
+  bits.push(`${pollSeconds}s`);
+  if (data.correction?.status) bits.push(data.correction.label);
+  return bits.join(" · ");
 }
 
 function renderMatchups(matchups) {
@@ -156,6 +174,21 @@ function syncWeekOptions(weeks, selectedWeek) {
   els.weekSelect.value = String(selectedWeek);
 }
 
+function syncSeasonOptions(seasons, selectedSeason) {
+  if (!Array.isArray(seasons) || !seasons.length) return;
+  const normalized = seasons.map((season) => String(season));
+  const currentValues = [...els.seasonSelect.options].map((option) => option.value);
+  if (currentValues.join(",") === normalized.join(",")) return;
+  els.seasonSelect.innerHTML = "";
+  for (const season of normalized) {
+    const option = document.createElement("option");
+    option.value = season;
+    option.textContent = season;
+    els.seasonSelect.append(option);
+  }
+  els.seasonSelect.value = String(selectedSeason);
+}
+
 function newScoringRows(components) {
   if (!components?.length) {
     return `<div class="empty">No custom DST drive events have been scored for this selected week.</div>`;
@@ -220,6 +253,8 @@ function setLoading(isLoading) {
 function renderError(error) {
   const message = `<div class="empty error">${escapeHtml(error.message)}</div>`;
   els.matchups.innerHTML = message;
+  els.statusDetail.textContent = "Refresh failed; retrying";
+  els.statusDetail.className = "status-detail stale";
 }
 
 function fmt(value) {

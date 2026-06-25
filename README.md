@@ -10,6 +10,20 @@ The app combines:
 
 It is intentionally read-only: no auth, no league edits, and no write actions.
 
+## What Users See
+
+- A matchup-first league view.
+- Each team shows the custom total as the primary score.
+- The normal Sleeper total is shown smaller underneath.
+- Clicking a team opens a DST audit with new scoring, old Sleeper scoring, and team impact.
+- The page refreshes automatically: every 15 seconds while NFL games are live, every 30 seconds otherwise.
+
+## Reliability Behavior
+
+The server keeps an in-memory cache of upstream ESPN and Sleeper responses. If a refresh fails but prior data exists, the page keeps showing the last usable dashboard and marks the status as stale instead of going blank.
+
+Completed weeks are treated as provisional until the Wednesday midnight Eastern correction window after the last NFL game in the selected week. After that, the dashboard marks the week as finalized. The app still recomputes from current ESPN/Sleeper data on request; it does not yet persist a frozen historical archive.
+
 ## Run Locally
 
 ```bash
@@ -42,3 +56,8 @@ This repo includes `render.yaml` for Render Blueprint deploys. A manual Render w
 ## Notes
 
 ESPN data is provisional and may differ from later corrections. Sleeper provides league rosters, starters, and live platform scoring.
+
+## More Docs
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Operations](docs/OPERATIONS.md)
