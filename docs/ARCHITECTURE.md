@@ -2,6 +2,8 @@
 
 This repo is a small read-only Node web app. It exists to show a Sleeper league's matchup scores under a custom DST drive-scoring regime.
 
+For the exact custom scoring rules, see [Custom DST Scoring](SCORING.md).
+
 ## Runtime Shape
 
 - `src/server.js`

@@ -61,3 +61,4 @@ ESPN data is provisional and may differ from later corrections. Sleeper provides
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Operations](docs/OPERATIONS.md)
+- [Custom DST scoring](docs/SCORING.md)
