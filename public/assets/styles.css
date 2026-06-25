@@ -490,6 +490,12 @@ dialog::backdrop {
   font-size: 20px;
 }
 
+.audit-note {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .audit-event {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

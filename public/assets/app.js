@@ -204,9 +204,10 @@ function openAudit(team) {
       </section>
       <section class="audit-column">
         <div class="audit-column-head">
-          <span>Old scoring</span>
+          <span>Old scoring (Sleeper)</span>
           <strong>${signed(oldAudit.total)}</strong>
         </div>
+        <p class="audit-note">Rows are an ESPN state estimate reconciled to Sleeper's live D/ST total.</p>
         ${oldScoringRows(oldAudit.components)}
       </section>
     </div>
@@ -263,7 +264,7 @@ function oldScoringRows(components) {
 
 function oldEventDetail(event) {
   if (event.kind === "points_allowed") return "Score tier";
-  if (event.kind === "sleeper_reconciliation") return "Sleeper reconciliation";
+  if (event.kind === "sleeper_reconciliation") return "Reconciles estimate to Sleeper";
   if (event.kind === "sleeper_dst_total") return "Sleeper live scoring";
   if (event.count && event.unit !== undefined) {
     return `${fmt(event.count)} × ${signed(event.unit)}`;

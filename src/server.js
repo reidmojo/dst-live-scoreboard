@@ -15,6 +15,9 @@ const SLEEPER_BASE = "https://api.sleeper.app/v1";
 const ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
 const ESPN_SUMMARY = "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary";
 const MAX_FANTASY_WEEK = 17;
+const SLEEPER_TO_ESPN_DEFENSE = {
+  WAS: "WSH"
+};
 
 const cache = new Map();
 
@@ -143,7 +146,7 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
       const dstStarterIndex = starters.findIndex((playerId) => isDefenseId(playerId));
       const dstTeam = dstStarterIndex >= 0 ? starters[dstStarterIndex] : "";
       const sleeperDstPoints = dstStarterIndex >= 0 ? Number(startersPoints[dstStarterIndex] || 0) : 0;
-      const customDst = espnScores.dstScores[dstTeam] || { points: 0, components: [], games: [], oldComponents: [], oldEstimatedPoints: 0 };
+      const customDst = espnScores.dstScores[espnDefenseKey(dstTeam)] || { points: 0, components: [], games: [], oldComponents: [], oldEstimatedPoints: 0 };
       const sleeperTotal = Number(matchup.points ?? roster.settings?.fpts ?? 0);
       const nonDstSleeperTotal = round(sleeperTotal - sleeperDstPoints);
       const projectedCustomTotal = round(nonDstSleeperTotal + customDst.points);
@@ -227,6 +230,10 @@ function buildMatchups(teams) {
 
 function isDefenseId(playerId) {
   return /^[A-Z]{2,3}$/.test(String(playerId || ""));
+}
+
+function espnDefenseKey(sleeperDefenseId) {
+  return SLEEPER_TO_ESPN_DEFENSE[sleeperDefenseId] || sleeperDefenseId;
 }
 
 function sleeperAvatar(id) {

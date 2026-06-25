@@ -295,7 +295,7 @@ function hasDstTouchdown(drive, defense, teamsByAbbr) {
   const defenseId = teamsByAbbr.get(defense)?.id;
   if (!defenseId || !Array.isArray(drive.plays)) return false;
   return drive.plays.some((play) => {
-    if (!play?.scoringPlay || Number(play.scoreValue || 0) < 6) return false;
+    if (!play?.scoringPlay) return false;
     if (String(play.end?.team?.id || "") === String(defenseId)) return true;
     const text = `${play.type?.text || ""} ${play.text || ""}`.toUpperCase();
     return /INTERCEPTION|FUMBLE|BLOCK|PUNT|KICKOFF/.test(text) && /TOUCHDOWN| TD\b/.test(text);
