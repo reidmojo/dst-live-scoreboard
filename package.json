@@ -1,0 +1,13 @@
+{
+  "name": "dst-live-scoreboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Live custom DST scoring dashboard for a Sleeper fantasy league.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

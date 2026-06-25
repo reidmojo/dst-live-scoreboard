@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: dst-live-scoreboard
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SLEEPER_LEAGUE_ID
+        value: "1239299227176157184"
+      - key: PUBLIC_PATH
+        value: /is-it-whiskey-dst-live
