@@ -27,6 +27,8 @@ The `opponent 49 through opponent 20` bucket is intentionally `+2.5`.
 
 For non-scoring opponent drives, the scorer looks at the next ESPN drive. If the next drive belongs to the defense, the next drive's starting field position is treated as the takeover spot.
 
+Penalties against either team that affect the next drive's starting field position are therefore baked into the drive result. The scorer does not try to reconstruct the field position before those penalties. It uses the actual next-drive start reported by ESPN.
+
 Examples:
 
 - Opponent punts, defense starts at its own 12: `+1`
