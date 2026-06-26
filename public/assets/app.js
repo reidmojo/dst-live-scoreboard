@@ -7,6 +7,7 @@ const state = {
 
 const els = {
   leagueName: document.querySelector("#leagueName"),
+  leagueAvatar: document.querySelector("#leagueAvatar"),
   updatedAt: document.querySelector("#updatedAt"),
   statusDetail: document.querySelector("#statusDetail"),
   seasonSelect: document.querySelector("#seasonSelect"),
@@ -26,6 +27,10 @@ async function boot() {
   els.weekSelect.addEventListener("change", loadDashboard);
   els.seasonSelect.addEventListener("change", loadDashboard);
   els.closeDialog.addEventListener("click", () => els.auditDialog.close());
+  els.leagueAvatar?.addEventListener("error", () => {
+    els.leagueAvatar.removeAttribute("src");
+    els.leagueAvatar.parentElement.dataset.fallback = "IW";
+  });
 
   await loadDashboard();
 }
@@ -59,6 +64,7 @@ function render() {
   if (!data) return;
 
   els.leagueName.textContent = data.league.name || "League";
+  renderLeagueAvatar(data.league);
   syncSeasonOptions(data.seasons, data.selected.season);
   syncWeekOptions(data.weeks, data.selected.week);
   els.seasonSelect.value = data.selected.season;
@@ -77,11 +83,20 @@ function scheduleRefresh(delayMs) {
 
 function statusDetail(data) {
   const bits = [];
-  const pollSeconds = Math.round((data.health?.pollIntervalMs || 30_000) / 1000);
-  bits.push(data.health?.stale ? "Stale cache" : "Live refresh");
-  bits.push(`${pollSeconds}s`);
-  if (data.correction?.status) bits.push(data.correction.label);
+  if (data.health?.stale) bits.push("Using cached data");
+  if (data.correction?.label) bits.push(data.correction.label);
   return bits.join(" · ");
+}
+
+function renderLeagueAvatar(league) {
+  if (!els.leagueAvatar) return;
+  if (league?.avatar) {
+    els.leagueAvatar.src = league.avatar;
+    delete els.leagueAvatar.parentElement.dataset.fallback;
+    return;
+  }
+  els.leagueAvatar.removeAttribute("src");
+  els.leagueAvatar.parentElement.dataset.fallback = "IW";
 }
 
 function renderMatchups(matchups) {
@@ -107,6 +122,7 @@ function renderMatchups(matchups) {
 function matchupSideHtml(team, highScore, side) {
   if (!team) return `<div class="matchup-side ${side} empty-side"></div>`;
   const isLeader = Number(team.projectedCustomTotal || 0) === highScore;
+  const meterClass = isLeader ? "winner" : "loser";
   const record = recordSummary(team);
   return `
     <div class="matchup-side ${side} ${isLeader ? "leader" : ""}">
@@ -117,7 +133,7 @@ function matchupSideHtml(team, highScore, side) {
           <span>${fmt(team.sleeperTotal)}</span>
         </div>
       </div>
-      <div class="matchup-meter"><span style="width:${isLeader ? 100 : 18}%"></span></div>
+      <div class="matchup-meter ${meterClass}"><span style="width:${isLeader ? 100 : 0}%"></span></div>
       <div class="matchup-main">
         <strong>${escapeHtml(team.teamName)}</strong>
         <span>${escapeHtml(record)} · ${escapeHtml(team.manager)}</span>
@@ -214,8 +230,7 @@ function playerCardHtml(player, team, side) {
         <span>${escapeHtml(subScore)}</span>
       </div>
       <div class="player-extra">
-        <p>${escapeHtml(player.name)} · ${escapeHtml(player.slot)} · ${escapeHtml(player.status || "status unavailable")}</p>
-        ${player.detail?.number ? `<p>No. ${escapeHtml(player.detail.number)}${player.detail.depthChartPosition ? ` · ${escapeHtml(player.detail.depthChartPosition)}` : ""}</p>` : ""}
+        <p>${escapeHtml(player.statsLine || "No scoring details available yet.")}</p>
         ${player.isDefense ? defenseAuditHtml(team) : ""}
       </div>
     </div>

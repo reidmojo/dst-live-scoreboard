@@ -57,10 +57,25 @@ select {
   width: 54px;
   height: 54px;
   border: 1px solid rgba(18, 209, 142, 0.45);
+  overflow: hidden;
   background: #13211d;
   color: var(--green);
   font-weight: 900;
   letter-spacing: 0;
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.brand-mark[data-fallback]::before {
+  content: attr(data-fallback);
+}
+
+.brand-mark[data-fallback] img {
+  display: none;
 }
 
 .eyebrow,
@@ -129,7 +144,7 @@ button:disabled {
 .status-strip {
   display: inline-grid;
   min-width: min(360px, 100%);
-  margin-bottom: 16px;
+  margin-top: 16px;
 }
 
 .status-strip > div {
@@ -292,10 +307,13 @@ button:disabled {
   background: #3d4a75;
 }
 
+.matchup-meter.loser {
+  background: rgba(255, 94, 129, 0.52);
+}
+
 .matchup-meter span {
   display: block;
   height: 100%;
-  min-width: 14%;
   border-radius: inherit;
   background: var(--muted);
 }
@@ -723,6 +741,10 @@ dialog::backdrop {
   .audit-total-row {
     grid-template-columns: 1fr;
   }
+
+  .player-extra .audit-total-row.compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 760px) {
@@ -755,6 +777,19 @@ dialog::backdrop {
 
   .status-detail {
     grid-column: 1 / -1;
+  }
+
+  .dialog-head,
+  .audit-list {
+    padding: 14px;
+  }
+
+  .dialog-head h2 {
+    font-size: 21px;
+  }
+
+  .dialog-head button {
+    min-width: 74px;
   }
 
   .matchup-card-button {
@@ -797,6 +832,8 @@ dialog::backdrop {
     grid-template-columns: 1fr;
     justify-items: start;
     text-align: left;
+    gap: 8px;
+    padding: 10px;
   }
 
   .detail-team.right .avatar,
@@ -811,11 +848,13 @@ dialog::backdrop {
   .slot-pill {
     min-height: 38px;
     font-size: 11px;
+    border-radius: 8px;
   }
 
   .player-card {
     grid-template-columns: 1fr;
     gap: 5px;
+    padding: 8px 0;
   }
 
   .player-card.right .player-score,
@@ -826,5 +865,65 @@ dialog::backdrop {
 
   .player-card.right .player-score {
     text-align: right;
+  }
+
+  .starter-row:has(.player-card.expanded) {
+    grid-template-columns: 1fr;
+  }
+
+  .starter-row:has(.player-card.expanded) .slot-pill,
+  .starter-row:has(.player-card.left.expanded) .player-card.right,
+  .starter-row:has(.player-card.right.expanded) .player-card.left {
+    display: none;
+  }
+
+  .starter-row:has(.player-card.left.expanded) .player-card.left,
+  .starter-row:has(.player-card.right.expanded) .player-card.right {
+    grid-column: 1;
+    text-align: left;
+  }
+
+  .starter-row:has(.player-card.right.expanded) .player-card.right .player-main,
+  .starter-row:has(.player-card.right.expanded) .player-card.right .player-score {
+    grid-column: auto;
+    grid-row: auto;
+    text-align: left;
+  }
+
+  .player-main strong {
+    white-space: normal;
+  }
+
+  .player-main span,
+  .player-score span,
+  .player-extra,
+  .audit-note,
+  .audit-event span,
+  .audit-event small,
+  .audit-event p {
+    font-size: 11px;
+  }
+
+  .player-extra {
+    padding: 8px;
+  }
+
+  .player-extra .audit-columns.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .player-extra .audit-total-row.compact {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .player-extra .audit-total-row.compact > div,
+  .player-extra .audit-column-head,
+  .player-extra .audit-event {
+    padding: 8px;
+  }
+
+  .player-extra .audit-total-row strong,
+  .player-extra .audit-column-head strong {
+    font-size: 16px;
   }
 }

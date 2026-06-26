@@ -89,12 +89,13 @@ async function buildDashboard(url) {
   const weeks = weekOptionsForSeason(Number(season), seasons.at(-1), defaultSelectedWeek);
   const requestedWeek = Number(url.searchParams.get("week") || 0);
   const week = selectWeek(requestedWeek, weeks);
-  const [rosters, users, matchups, scoreboard, playersById] = await Promise.all([
+  const [rosters, users, matchups, scoreboard, playersById, playerStats] = await Promise.all([
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/rosters`, { ttlMs: 300_000, requestState, label: "Sleeper rosters" }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/users`, { ttlMs: 300_000, requestState, label: "Sleeper users" }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/matchups/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper matchups" }),
     fetchJson(`${ESPN_SCOREBOARD}?seasontype=2&week=${week}&dates=${season}`, { ttlMs: 20_000, requestState, label: "ESPN scoreboard" }),
-    fetchJson(`${SLEEPER_BASE}/players/nfl`, { ttlMs: 43_200_000, requestState, label: "Sleeper player metadata" })
+    fetchJson(`${SLEEPER_BASE}/players/nfl`, { ttlMs: 43_200_000, requestState, label: "Sleeper player metadata" }),
+    fetchJson(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper player stats" })
   ]);
 
   const events = scoreboard.events || [];
@@ -119,6 +120,7 @@ async function buildDashboard(url) {
     matchups: matchups || [],
     espnScores,
     playersById,
+    playerStats: playerStats || {},
     rosterPositions: league.roster_positions || []
   });
   const matchupsView = buildMatchups(teams);
@@ -314,7 +316,7 @@ function timeZoneOffsetMs(date, timeZone) {
   return asUtc - date.getTime();
 }
 
-function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, rosterPositions }) {
+function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, playerStats, rosterPositions }) {
   const usersById = new Map(users.map((user) => [user.user_id, user]));
   const matchupsByRoster = new Map(matchups.map((matchup) => [matchup.roster_id, matchup]));
   const hasScoredMatchups = matchups.some((matchup) => matchup.matchup_id != null);
@@ -372,6 +374,7 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, r
           playersPoints: matchup.players_points || {},
           rosterPositions,
           playersById,
+          playerStats,
           dstTeam,
           customDst,
           sleeperDstPoints
@@ -381,9 +384,10 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, r
     .sort((a, b) => b.projectedCustomTotal - a.projectedCustomTotal);
 }
 
-function buildStarters({ starters, startersPoints, playersPoints, rosterPositions, playersById, dstTeam, customDst, sleeperDstPoints }) {
+function buildStarters({ starters, startersPoints, playersPoints, rosterPositions, playersById, playerStats, dstTeam, customDst, sleeperDstPoints }) {
   return starters.map((playerId, index) => {
     const player = playersById?.[playerId] || {};
+    const stats = playerStats?.[playerId] || {};
     const isDefense = isDefenseId(playerId);
     const sleeperScore = round(Number(startersPoints[index] ?? playersPoints[playerId] ?? 0));
     const score = isDefense && playerId === dstTeam ? round(customDst.points) : sleeperScore;
@@ -403,9 +407,76 @@ function buildStarters({ starters, startersPoints, playersPoints, rosterPosition
       sleeperScore,
       customScore: isDefense ? round(customDst.points) : null,
       isDefense,
+      statsLine: playerStatsLine(position, stats),
       detail: playerDetail(player)
     };
   });
+}
+
+function playerStatsLine(position, stats = {}) {
+  const parts = [];
+  const pos = String(position || "").toUpperCase();
+  const passCmp = statValue(stats, "pass_cmp");
+  const passAtt = statValue(stats, "pass_att");
+  if (passCmp != null || passAtt != null) {
+    parts.push(`${formatStat(passCmp || 0)}/${formatStat(passAtt || 0)} CMP`);
+    addStatPart(parts, stats, "pass_yd", "YD");
+    addStatPart(parts, stats, "pass_td", "TD");
+    addStatPart(parts, stats, "pass_int", "INT");
+  }
+
+  const rushAtt = statValue(stats, "rush_att");
+  if (rushAtt != null) {
+    parts.push(`${formatStat(rushAtt)} CAR`);
+    addStatPart(parts, stats, "rush_yd", "YD");
+    addStatPart(parts, stats, "rush_td", "TD");
+  }
+
+  const rec = statValue(stats, "rec");
+  const recTgt = statValue(stats, "rec_tgt");
+  if (rec != null || recTgt != null) {
+    parts.push(`${formatStat(rec || 0)}/${formatStat(recTgt || 0)} REC`);
+    addStatPart(parts, stats, "rec_yd", "YD");
+    addStatPart(parts, stats, "rec_td", "TD");
+  }
+
+  addStatPart(parts, stats, "fum_lost", "FMBL");
+  if (pos === "K") {
+    const fgm = statValue(stats, "fgm");
+    const fga = statValue(stats, "fga");
+    const xpm = statValue(stats, "xpm");
+    const xpa = statValue(stats, "xpa");
+    if (fgm != null || fga != null) parts.push(`${formatStat(fgm || 0)}/${formatStat(fga || 0)} FG`);
+    if (xpm != null || xpa != null) parts.push(`${formatStat(xpm || 0)}/${formatStat(xpa || 0)} XP`);
+  }
+  if (pos === "DEF") {
+    addStatPart(parts, stats, "sack", "SACK");
+    addStatPart(parts, stats, "int", "INT");
+    addStatPart(parts, stats, "fum_rec", "FR");
+    addStatPart(parts, stats, "def_td", "TD");
+    addStatPart(parts, stats, "safe", "SAFE");
+    addStatPart(parts, stats, "pts_allow", "PA");
+  }
+
+  return parts.join(", ");
+}
+
+function addStatPart(parts, stats, key, label) {
+  const value = statValue(stats, key);
+  if (value == null || value === 0) return;
+  parts.push(`${formatStat(value)} ${label}`);
+}
+
+function statValue(stats, key) {
+  const value = stats?.[key];
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatStat(value) {
+  const number = Number(value || 0);
+  return number.toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
 function playerName(player, playerId) {

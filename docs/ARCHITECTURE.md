@@ -62,7 +62,7 @@ https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary
 ESPN provides:
 
 - NFL games for the selected season/week.
-- Game status.
+- Game state.
 - Drives and game summary information used to estimate custom DST scoring.
 
 ESPN is unofficial for this app. Scores should be treated as provisional until weekly corrections have settled.
@@ -72,15 +72,15 @@ ESPN is unofficial for this app. Scores should be treated as provisional until w
 1. Browser requests `/api/dashboard`.
 2. Server fetches Sleeper state and league metadata.
 3. Server decides the selected season/week.
-4. Server fetches rosters, users, matchups, and ESPN scoreboard in parallel.
+4. Server fetches rosters, users, matchups, weekly player stats, and ESPN scoreboard in parallel.
 5. Server fetches ESPN summaries for games with useful play/drive data.
 6. `scoreWeekFromEspn()` converts ESPN game state into custom DST scores.
 7. Server combines:
    - Sleeper total score
    - Sleeper D/ST points
    - ESPN-derived custom D/ST points
-8. Server attaches starter rows with player metadata and current points.
-9. Server returns matchup cards, starter details, audit details, selector options, correction status, and refresh guidance.
+8. Server attaches starter rows with player metadata, current points, and compact weekly stat lines.
+9. Server returns matchup cards, starter details, audit details, selector options, correction window, and refresh guidance.
 
 ## Cache Policy
 
@@ -122,8 +122,8 @@ The server currently:
 
 Week 18 is intentionally excluded.
 
-## Correction Status
+## Correction Window
 
 For completed NFL weeks, the server computes the first Wednesday midnight Eastern after the last selected-week NFL game. Until that timestamp, the dashboard is marked provisional. After that timestamp, it is marked finalized.
 
-This is a status mode, not persistent storage. The app does not yet write finalized score snapshots to a database.
+This is display logic, not persistent storage. The app does not yet write finalized score snapshots to a database.

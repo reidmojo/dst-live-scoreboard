@@ -85,10 +85,11 @@ Server cache TTLs:
 
 - ESPN scoreboard and summaries: 20 seconds
 - Sleeper matchups: 30 seconds
+- Sleeper weekly player stats: 30 seconds
 - Sleeper NFL state: 60 seconds
 - Sleeper league, rosters, users: 5 minutes
 
-If ESPN or Sleeper fails temporarily, the server returns cached/stale data when available and the UI says so in the status row.
+If ESPN or Sleeper fails temporarily, the server returns cached/stale data when available and the bottom update box says so.
 
 ## Local Smoke Test
 
@@ -108,9 +109,9 @@ Useful checks:
 - Page loads without console errors.
 - Season selector is populated by API data.
 - Week selector is populated by API data.
-- Status row shows refresh interval and correction status.
+- Bottom update box shows the last refresh timestamp and correction window.
 - Clicking a matchup opens the starter-by-starter matchup detail.
-- Clicking a DEF starter expands the custom DST audit.
+- Clicking a starter expands current scoring details; DEF starters also expand the custom DST audit.
 - Footer Source link points to the public repo.
 
 ## Publishing From The Monorepo Workspace
