@@ -2,7 +2,8 @@ const state = {
   data: null,
   selectedTeam: null,
   timer: null,
-  hasLoaded: false
+  hasLoaded: false,
+  scrollY: 0
 };
 
 const els = {
@@ -27,6 +28,7 @@ async function boot() {
   els.weekSelect.addEventListener("change", loadDashboard);
   els.seasonSelect.addEventListener("change", loadDashboard);
   els.closeDialog.addEventListener("click", () => els.auditDialog.close());
+  els.auditDialog.addEventListener("close", unlockPageScroll);
   els.leagueAvatar?.addEventListener("error", () => {
     els.leagueAvatar.removeAttribute("src");
     els.leagueAvatar.parentElement.dataset.fallback = "IW";
@@ -177,8 +179,21 @@ function openMatchup(matchup) {
       }
     });
   });
+  lockPageScroll();
   els.auditDialog.showModal();
   attachAvatarFallbacks(els.auditDialog);
+}
+
+function lockPageScroll() {
+  state.scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+  document.body.classList.add("modal-open");
+  document.body.style.top = `-${state.scrollY}px`;
+}
+
+function unlockPageScroll() {
+  document.body.classList.remove("modal-open");
+  document.body.style.top = "";
+  window.scrollTo(0, state.scrollY || 0);
 }
 
 function attachAvatarFallbacks(root) {
