@@ -89,11 +89,12 @@ async function buildDashboard(url) {
   const weeks = weekOptionsForSeason(Number(season), seasons.at(-1), defaultSelectedWeek);
   const requestedWeek = Number(url.searchParams.get("week") || 0);
   const week = selectWeek(requestedWeek, weeks);
-  const [rosters, users, matchups, scoreboard] = await Promise.all([
+  const [rosters, users, matchups, scoreboard, playersById] = await Promise.all([
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/rosters`, { ttlMs: 300_000, requestState, label: "Sleeper rosters" }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/users`, { ttlMs: 300_000, requestState, label: "Sleeper users" }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/matchups/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper matchups" }),
-    fetchJson(`${ESPN_SCOREBOARD}?seasontype=2&week=${week}&dates=${season}`, { ttlMs: 20_000, requestState, label: "ESPN scoreboard" })
+    fetchJson(`${ESPN_SCOREBOARD}?seasontype=2&week=${week}&dates=${season}`, { ttlMs: 20_000, requestState, label: "ESPN scoreboard" }),
+    fetchJson(`${SLEEPER_BASE}/players/nfl`, { ttlMs: 43_200_000, requestState, label: "Sleeper player metadata" })
   ]);
 
   const events = scoreboard.events || [];
@@ -112,7 +113,14 @@ async function buildDashboard(url) {
   );
 
   const espnScores = scoreWeekFromEspn(events, summaries, league.scoring_settings || {});
-  const teams = buildLeagueTeams({ rosters, users, matchups: matchups || [], espnScores });
+  const teams = buildLeagueTeams({
+    rosters,
+    users,
+    matchups: matchups || [],
+    espnScores,
+    playersById,
+    rosterPositions: league.roster_positions || []
+  });
   const matchupsView = buildMatchups(teams);
   const liveGameCount = countLiveGames(events);
   const pollIntervalMs = liveGameCount > 0 ? LIVE_POLL_INTERVAL_MS : NORMAL_POLL_INTERVAL_MS;
@@ -306,10 +314,15 @@ function timeZoneOffsetMs(date, timeZone) {
   return asUtc - date.getTime();
 }
 
-function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
+function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, rosterPositions }) {
   const usersById = new Map(users.map((user) => [user.user_id, user]));
   const matchupsByRoster = new Map(matchups.map((matchup) => [matchup.roster_id, matchup]));
+  const hasScoredMatchups = matchups.some((matchup) => matchup.matchup_id != null);
   return rosters
+    .filter((roster) => {
+      const matchup = matchupsByRoster.get(roster.roster_id);
+      return !hasScoredMatchups || matchup?.matchup_id != null;
+    })
     .map((roster) => {
       const user = usersById.get(roster.owner_id) || {};
       const matchup = matchupsByRoster.get(roster.roster_id) || {};
@@ -337,8 +350,11 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
         ownerId: roster.owner_id,
         manager: user.display_name || `Roster ${roster.roster_id}`,
         teamName: user.metadata?.team_name || user.display_name || `Roster ${roster.roster_id}`,
-        avatar: user.metadata?.avatar || sleeperAvatar(user.avatar),
+        avatar: sleeperAvatar(user.metadata?.avatar || user.avatar),
         record: roster.metadata?.record || "",
+        wins: Number(roster.settings?.wins || 0),
+        losses: Number(roster.settings?.losses || 0),
+        ties: Number(roster.settings?.ties || 0),
         sleeperTotal: round(sleeperTotal),
         sleeperDstPoints: round(sleeperDstPoints),
         nonDstSleeperTotal,
@@ -349,10 +365,67 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores }) {
         newDstAudit,
         oldDstAudit,
         dstComponents: customDst.components || [],
-        dstGames: customDst.games || []
+        dstGames: customDst.games || [],
+        starters: buildStarters({
+          starters,
+          startersPoints,
+          playersPoints: matchup.players_points || {},
+          rosterPositions,
+          playersById,
+          dstTeam,
+          customDst,
+          sleeperDstPoints
+        })
       };
     })
     .sort((a, b) => b.projectedCustomTotal - a.projectedCustomTotal);
+}
+
+function buildStarters({ starters, startersPoints, playersPoints, rosterPositions, playersById, dstTeam, customDst, sleeperDstPoints }) {
+  return starters.map((playerId, index) => {
+    const player = playersById?.[playerId] || {};
+    const isDefense = isDefenseId(playerId);
+    const sleeperScore = round(Number(startersPoints[index] ?? playersPoints[playerId] ?? 0));
+    const score = isDefense && playerId === dstTeam ? round(customDst.points) : sleeperScore;
+    const position = player.position || player.fantasy_positions?.[0] || (isDefense ? "DEF" : "");
+    return {
+      playerId,
+      slot: rosterPositions[index] || position || "STARTER",
+      name: playerName(player, playerId),
+      shortName: shortPlayerName(player, playerId),
+      firstName: player.first_name || "",
+      lastName: player.last_name || "",
+      position,
+      team: player.team || playerId,
+      injuryStatus: player.injury_status || "",
+      status: player.status || "",
+      score,
+      sleeperScore,
+      customScore: isDefense ? round(customDst.points) : null,
+      isDefense,
+      detail: playerDetail(player)
+    };
+  });
+}
+
+function playerName(player, playerId) {
+  if (player.full_name) return player.full_name;
+  if (player.first_name || player.last_name) return `${player.first_name || ""} ${player.last_name || ""}`.trim();
+  return playerId;
+}
+
+function shortPlayerName(player, playerId) {
+  if (player.first_name && player.last_name) return `${player.first_name[0]}. ${player.last_name}`;
+  return playerName(player, playerId);
+}
+
+function playerDetail(player) {
+  return {
+    yearsExp: player.years_exp ?? null,
+    depthChartPosition: player.depth_chart_position || "",
+    depthChartOrder: player.depth_chart_order ?? null,
+    number: player.number ?? null
+  };
 }
 
 function reconcileOldDstComponents(components, sleeperDstPoints, estimatedPoints) {
@@ -391,7 +464,7 @@ function buildMatchups(teams) {
   return [...groups.entries()]
     .map(([id, matchupTeams]) => ({
       id,
-      teams: matchupTeams.sort((a, b) => b.projectedCustomTotal - a.projectedCustomTotal)
+      teams: matchupTeams.sort((a, b) => Number(a.rosterId) - Number(b.rosterId))
     }))
     .sort((a, b) => {
       const aTop = a.teams[0]?.projectedCustomTotal || 0;
@@ -409,6 +482,7 @@ function espnDefenseKey(sleeperDefenseId) {
 }
 
 function sleeperAvatar(id) {
+  if (String(id || "").startsWith("http")) return id;
   return id ? `https://sleepercdn.com/avatars/thumbs/${id}` : "";
 }
 

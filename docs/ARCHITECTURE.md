@@ -18,7 +18,7 @@ For the exact custom scoring rules, see [Custom DST Scoring](SCORING.md).
 - `public/index.html`
   - Shell markup for the single-page app.
 - `public/assets/app.js`
-  - Browser state, refresh loop, selector sync, matchup rendering, and audit dialog.
+  - Browser state, refresh loop, selector sync, matchup rendering, starter detail rendering, and DST audit expansion.
 - `public/assets/styles.css`
   - Dark UI styling.
 
@@ -48,6 +48,7 @@ Sleeper provides:
 - Starters.
 - Live platform points, including non-DST player scoring.
 - Sleeper's live old-scoring D/ST total.
+- Player metadata from `/players/nfl`, used for starter names, positions, teams, and injury flags.
 
 ### ESPN Site APIs
 
@@ -78,7 +79,8 @@ ESPN is unofficial for this app. Scores should be treated as provisional until w
    - Sleeper total score
    - Sleeper D/ST points
    - ESPN-derived custom D/ST points
-8. Server returns matchup cards, audit details, selector options, correction status, and refresh guidance.
+8. Server attaches starter rows with player metadata and current points.
+9. Server returns matchup cards, starter details, audit details, selector options, correction status, and refresh guidance.
 
 ## Cache Policy
 
@@ -91,6 +93,7 @@ Current upstream TTLs:
 - Sleeper matchups: 30 seconds
 - ESPN scoreboard: 20 seconds
 - ESPN summaries: 20 seconds
+- Sleeper player metadata: 12 hours
 
 If a fetch fails and an older cached value exists, the server returns the cached value and adds a warning in `health.warnings`.
 

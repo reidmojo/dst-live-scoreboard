@@ -90,74 +90,160 @@ function renderMatchups(matchups) {
     const card = document.createElement("article");
     card.className = "matchup-card";
     const highScore = Math.max(...matchup.teams.map((team) => Number(team.projectedCustomTotal || 0)));
-    const rows = matchup.teams.map((team) => matchupTeamHtml(team, highScore)).join("");
+    const [leftTeam, rightTeam] = matchup.teams;
     card.innerHTML = `
-      <div class="matchup-teams">${rows}</div>
+      <button class="matchup-card-button" type="button" data-matchup-id="${escapeAttribute(matchup.id)}">
+        ${matchupSideHtml(leftTeam, highScore, "left")}
+        <span class="vs-pill">VS</span>
+        ${matchupSideHtml(rightTeam, highScore, "right")}
+      </button>
     `;
-    card.querySelectorAll("[data-roster-id]").forEach((button) => {
-      const team = matchup.teams.find((candidate) => String(candidate.rosterId) === button.dataset.rosterId);
-      button.addEventListener("click", () => openAudit(team));
-    });
+    card.querySelector("[data-matchup-id]").addEventListener("click", () => openMatchup(matchup));
     els.matchups.append(card);
   }
+  attachAvatarFallbacks(els.matchups);
 }
 
-function matchupTeamHtml(team, highScore) {
+function matchupSideHtml(team, highScore, side) {
+  if (!team) return `<div class="matchup-side ${side} empty-side"></div>`;
   const isLeader = Number(team.projectedCustomTotal || 0) === highScore;
+  const record = recordSummary(team);
   return `
-    <button class="matchup-team ${isLeader ? "leader" : ""}" type="button" data-roster-id="${team.rosterId}">
-      ${avatarHtml(team)}
+    <div class="matchup-side ${side} ${isLeader ? "leader" : ""}">
+      <div class="matchup-head">
+        ${avatarHtml(team)}
+        <div class="score-block">
+          <strong>${fmt(team.projectedCustomTotal)}</strong>
+          <span>${fmt(team.sleeperTotal)}</span>
+        </div>
+      </div>
+      <div class="matchup-meter"><span style="width:${isLeader ? 100 : 18}%"></span></div>
       <div class="matchup-main">
         <strong>${escapeHtml(team.teamName)}</strong>
-        <span>${escapeHtml(team.manager)} · ${team.dstTeam || "No DEF"} ${signed(team.customDstPoints)} DST</span>
+        <span>${escapeHtml(record)} · ${escapeHtml(team.manager)}</span>
+        <small>${team.dstTeam || "No DEF"} ${signed(team.customDstPoints)} DST</small>
+      </div>
+    </div>
+  `;
+}
+
+function openMatchup(matchup) {
+  const [leftTeam, rightTeam] = matchup.teams;
+  els.auditTitle.textContent = `${state.data?.selected?.season || ""} Week ${state.data?.selected?.week || ""} Matchup`;
+  els.auditBody.innerHTML = `
+    <div class="matchup-detail-scoreboard">
+      ${detailTeamHtml(leftTeam, "left")}
+      <span class="vs-pill detail">VS</span>
+      ${detailTeamHtml(rightTeam, "right")}
+    </div>
+    <div class="starter-section-title">Starters</div>
+    <div class="starter-board">
+      ${starterRowsHtml(leftTeam, rightTeam)}
+    </div>
+  `;
+  els.auditBody.querySelectorAll("[data-player-card]").forEach((card) => {
+    card.addEventListener("click", () => card.classList.toggle("expanded"));
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        card.classList.toggle("expanded");
+      }
+    });
+  });
+  els.auditDialog.showModal();
+  attachAvatarFallbacks(els.auditDialog);
+}
+
+function attachAvatarFallbacks(root) {
+  root.querySelectorAll("img.avatar").forEach((img) => {
+    img.addEventListener("error", () => {
+      const fallback = document.createElement("div");
+      fallback.className = "avatar";
+      fallback.textContent = img.dataset.initials || "?";
+      img.replaceWith(fallback);
+    }, { once: true });
+  });
+}
+
+function detailTeamHtml(team, side) {
+  if (!team) return `<div class="detail-team ${side}"></div>`;
+  return `
+    <div class="detail-team ${side}">
+      ${avatarHtml(team)}
+      <div>
+        <strong>${escapeHtml(team.teamName)}</strong>
+        <span>${escapeHtml(recordSummary(team))} · ${escapeHtml(team.manager)}</span>
       </div>
       <div class="score-block">
         <strong>${fmt(team.projectedCustomTotal)}</strong>
         <span>${fmt(team.sleeperTotal)}</span>
       </div>
-    </button>
+    </div>
   `;
 }
 
-function openAudit(team) {
-  els.auditTitle.textContent = `${team.dstTeam || "No DEF"} · ${team.teamName}`;
+function starterRowsHtml(leftTeam, rightTeam) {
+  const maxRows = Math.max(leftTeam?.starters?.length || 0, rightTeam?.starters?.length || 0);
+  if (!maxRows) return `<div class="empty">No starters available for this matchup.</div>`;
+  return Array.from({ length: maxRows }, (_, index) => {
+    const leftPlayer = leftTeam?.starters?.[index] || null;
+    const rightPlayer = rightTeam?.starters?.[index] || null;
+    const slot = leftPlayer?.slot || rightPlayer?.slot || "STARTER";
+    return `
+      <div class="starter-row">
+        ${playerCardHtml(leftPlayer, leftTeam, "left")}
+        <span class="slot-pill ${positionClass(slot)}">${escapeHtml(slot)}</span>
+        ${playerCardHtml(rightPlayer, rightTeam, "right")}
+      </div>
+    `;
+  }).join("");
+}
+
+function playerCardHtml(player, team, side) {
+  if (!player || !team) return `<div class="player-card empty-player ${side}"></div>`;
+  const subScore = player.isDefense ? `Sleeper ${fmt(player.sleeperScore)}` : player.team || "";
+  const injury = player.injuryStatus ? `<b class="injury">${escapeHtml(player.injuryStatus)}</b>` : "";
+  return `
+    <div class="player-card ${side}" data-player-card role="button" tabindex="0">
+      <div class="player-main">
+        <strong>${escapeHtml(player.shortName || player.name)}</strong>
+        <span>${escapeHtml(player.position || player.slot)} · ${escapeHtml(player.team || "")} ${injury}</span>
+      </div>
+      <div class="player-score">
+        <strong>${fmt(player.score)}</strong>
+        <span>${escapeHtml(subScore)}</span>
+      </div>
+      <div class="player-extra">
+        <p>${escapeHtml(player.name)} · ${escapeHtml(player.slot)} · ${escapeHtml(player.status || "status unavailable")}</p>
+        ${player.detail?.number ? `<p>No. ${escapeHtml(player.detail.number)}${player.detail.depthChartPosition ? ` · ${escapeHtml(player.detail.depthChartPosition)}` : ""}</p>` : ""}
+        ${player.isDefense ? defenseAuditHtml(team) : ""}
+      </div>
+    </div>
+  `;
+}
+
+function defenseAuditHtml(team) {
   const newAudit = team.newDstAudit || { total: team.customDstPoints, components: team.dstComponents || [] };
   const oldAudit = team.oldDstAudit || { total: team.sleeperDstPoints, components: [] };
   const impact = Number(newAudit.total || 0) - Number(oldAudit.total || 0);
-  els.auditBody.innerHTML = `
-    <div class="audit-total-row">
-      <div>
-        <span>New DST</span>
-        <strong>${signed(newAudit.total)}</strong>
-      </div>
-      <div>
-        <span>Old DST</span>
-        <strong>${signed(oldAudit.total)}</strong>
-      </div>
-      <div>
-        <span>Team impact</span>
-        <strong class="${impact >= 0 ? "positive" : "negative"}">${signed(impact)}</strong>
-      </div>
+  return `
+    <div class="audit-total-row compact">
+      <div><span>New DST</span><strong>${signed(newAudit.total)}</strong></div>
+      <div><span>Old DST</span><strong>${signed(oldAudit.total)}</strong></div>
+      <div><span>Impact</span><strong class="${impact >= 0 ? "positive" : "negative"}">${signed(impact)}</strong></div>
     </div>
-    <div class="audit-columns">
+    <div class="audit-columns compact">
       <section class="audit-column">
-        <div class="audit-column-head">
-          <span>New scoring</span>
-          <strong>${signed(newAudit.total)}</strong>
-        </div>
+        <div class="audit-column-head"><span>New scoring</span><strong>${signed(newAudit.total)}</strong></div>
         ${newScoringRows(newAudit.components)}
       </section>
       <section class="audit-column">
-        <div class="audit-column-head">
-          <span>Old scoring (Sleeper)</span>
-          <strong>${signed(oldAudit.total)}</strong>
-        </div>
-        <p class="audit-note">Rows are an ESPN state estimate reconciled to Sleeper's live D/ST total.</p>
+        <div class="audit-column-head"><span>Old scoring</span><strong>${signed(oldAudit.total)}</strong></div>
+        <p class="audit-note">ESPN estimate reconciled to Sleeper's live D/ST total.</p>
         ${oldScoringRows(oldAudit.components)}
       </section>
     </div>
   `;
-  els.auditDialog.showModal();
 }
 
 function syncWeekOptions(weeks, selectedWeek) {
@@ -235,7 +321,7 @@ function oldEventDetail(event) {
 function avatarHtml(team) {
   const initials = (team.teamName || team.manager || "?").slice(0, 2).toUpperCase();
   if (!team.avatar) return `<div class="avatar">${escapeHtml(initials)}</div>`;
-  return `<img class="avatar" src="${escapeAttribute(team.avatar)}" alt="">`;
+  return `<img class="avatar" src="${escapeAttribute(team.avatar)}" alt="" data-initials="${escapeAttribute(initials)}">`;
 }
 
 function recordText(record) {
@@ -243,6 +329,15 @@ function recordText(record) {
   const wins = [...record].filter((char) => char === "W").length;
   const losses = [...record].filter((char) => char === "L").length;
   return `${wins}-${losses}`;
+}
+
+function recordSummary(team) {
+  const base = `${team.wins || 0}-${team.losses || 0}${team.ties ? `-${team.ties}` : ""}`;
+  return team.record ? `${base}` : base;
+}
+
+function positionClass(position) {
+  return String(position || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
 function setLoading(isLoading) {

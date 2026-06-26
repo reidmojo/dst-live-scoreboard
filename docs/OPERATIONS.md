@@ -109,7 +109,8 @@ Useful checks:
 - Season selector is populated by API data.
 - Week selector is populated by API data.
 - Status row shows refresh interval and correction status.
-- Clicking a matchup team opens the DST audit.
+- Clicking a matchup opens the starter-by-starter matchup detail.
+- Clicking a DEF starter expands the custom DST audit.
 - Footer Source link points to the public repo.
 
 ## Publishing From The Monorepo Workspace

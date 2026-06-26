@@ -15,7 +15,9 @@ It is intentionally read-only: no auth, no league edits, and no write actions.
 - A matchup-first league view.
 - Each team shows the custom total as the primary score.
 - The normal Sleeper total is shown smaller underneath.
-- Clicking a team opens a DST audit with new scoring, old Sleeper scoring, and team impact.
+- Matchup cards are presented left-vs-right, similar to the Sleeper league view.
+- Clicking a matchup opens starter-by-starter scoring for both teams.
+- Clicking a starter expands basic player context. Clicking a DEF starter also exposes the new-vs-old DST scoring audit.
 - The page refreshes automatically: every 15 seconds while NFL games are live, every 30 seconds otherwise.
 
 ## Reliability Behavior
