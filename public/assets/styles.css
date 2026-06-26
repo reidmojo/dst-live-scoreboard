@@ -42,7 +42,7 @@ select {
 .shell {
   width: min(1440px, 100%);
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 24px 96px;
 }
 
 .topbar {
@@ -150,9 +150,13 @@ button:disabled {
 }
 
 .status-strip {
-  display: inline-grid;
-  min-width: min(360px, 100%);
-  margin-top: 16px;
+  position: fixed;
+  right: max(16px, calc((100vw - 1440px) / 2 + 24px));
+  bottom: 14px;
+  z-index: 3;
+  display: grid;
+  width: min(420px, calc(100vw - 32px));
+  margin: 0;
 }
 
 .status-strip > div {
@@ -759,7 +763,7 @@ dialog::backdrop {
 
 @media (max-width: 760px) {
   .shell {
-    padding: 16px;
+    padding: 16px 16px 96px;
   }
 
   .topbar,
@@ -778,7 +782,10 @@ dialog::backdrop {
   }
 
   .status-strip {
-    display: grid;
+    right: 12px;
+    bottom: 10px;
+    left: 12px;
+    width: auto;
   }
 
   .status-strip > div {

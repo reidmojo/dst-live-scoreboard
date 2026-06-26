@@ -217,7 +217,7 @@ function starterRowsHtml(leftTeam, rightTeam) {
     return `
       <div class="starter-row">
         ${playerCardHtml(leftPlayer, leftTeam, "left")}
-        <span class="slot-pill ${positionClass(slot)}">${escapeHtml(slot)}</span>
+        <span class="slot-pill ${positionClass(slot)}">${escapeHtml(slotLabel(slot))}</span>
         ${playerCardHtml(rightPlayer, rightTeam, "right")}
       </div>
     `;
@@ -386,6 +386,13 @@ function recordSummary(team) {
 
 function positionClass(position) {
   return String(position || "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
+}
+
+function slotLabel(position) {
+  const normalized = String(position || "").toUpperCase();
+  if (normalized === "REC_FLEX") return "WT";
+  if (normalized === "SUPER_FLEX") return "WRTQ";
+  return position;
 }
 
 function setLoading(isLoading) {
