@@ -259,6 +259,14 @@ button:disabled {
   background: rgba(255, 255, 255, 0.03);
 }
 
+.matchup-card-button.static {
+  cursor: default;
+}
+
+.matchup-card-button.static:hover {
+  background: transparent;
+}
+
 .matchup-side {
   display: grid;
   align-content: space-between;
@@ -416,63 +424,8 @@ dialog::backdrop {
   padding: 18px;
 }
 
-.matchup-detail-scoreboard {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 48px minmax(0, 1fr);
-  gap: 12px;
-  align-items: stretch;
-}
-
-.detail-team {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  min-width: 0;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: rgba(31, 36, 45, 0.72);
-}
-
-.detail-team.right {
-  grid-template-columns: auto minmax(0, 1fr) 48px;
-  text-align: right;
-}
-
-.detail-team.right .avatar {
-  grid-column: 3;
-  grid-row: 1;
-}
-
-.detail-team.right > div:not(.score-block) {
-  grid-column: 2;
-  grid-row: 1;
-}
-
-.detail-team.right .score-block {
-  grid-column: 1;
-  grid-row: 1;
-  justify-items: start;
-  text-align: left;
-}
-
-.detail-team strong,
-.detail-team span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.detail-team span {
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 2px;
-}
-
-.vs-pill.detail {
-  align-self: center;
+.detail-matchup {
+  margin-bottom: 2px;
 }
 
 .starter-section-title {
@@ -497,12 +450,15 @@ dialog::backdrop {
 .slot-pill {
   display: grid;
   place-items: center;
+  min-width: 0;
   min-height: 44px;
+  overflow: hidden;
   border-radius: 10px;
   background: #222944;
   color: var(--blue);
   font-size: 13px;
   font-weight: 900;
+  text-align: center;
 }
 
 .slot-pill.rb,
@@ -529,11 +485,16 @@ dialog::backdrop {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px 10px;
+  align-items: start;
   min-width: 0;
   padding: 10px 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+  cursor: default;
+}
+
+.player-card.defense-card {
   cursor: pointer;
 }
 
@@ -567,9 +528,14 @@ dialog::backdrop {
 
 .player-main span,
 .player-score span,
-.player-extra {
+.player-statline {
   color: var(--muted);
   font-size: 12px;
+}
+
+.player-statline {
+  margin-top: 4px;
+  line-height: 1.35;
 }
 
 .player-score {
@@ -598,20 +564,46 @@ dialog::backdrop {
   font-weight: 900;
 }
 
-.player-extra {
-  display: none;
-  grid-column: 1 / -1;
-  margin-top: 6px;
-  padding: 10px;
+.dst-drilldown {
+  display: grid;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: rgba(31, 36, 45, 0.58);
-  text-align: left;
+  background: rgba(31, 36, 45, 0.72);
 }
 
-.player-card.expanded .player-extra {
-  display: grid;
-  gap: 8px;
+.dst-drilldown[hidden] {
+  display: none;
+}
+
+.dst-drilldown-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dst-drilldown-head span,
+.dst-drilldown-head strong {
+  display: block;
+}
+
+.dst-drilldown-head span {
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dst-drilldown-head strong {
+  margin-top: 3px;
+}
+
+.dst-drilldown-head button {
+  height: 34px;
 }
 
 .audit-total-row {
@@ -742,7 +734,7 @@ dialog::backdrop {
     grid-template-columns: 1fr;
   }
 
-  .player-extra .audit-total-row.compact {
+  .dst-drilldown .audit-total-row.compact {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
@@ -821,73 +813,36 @@ dialog::backdrop {
     font-size: 11px;
   }
 
-  .matchup-detail-scoreboard,
   .starter-row {
     grid-template-columns: minmax(0, 1fr) 42px minmax(0, 1fr);
     gap: 6px;
   }
 
-  .detail-team,
-  .detail-team.right {
-    grid-template-columns: 1fr;
-    justify-items: start;
-    text-align: left;
-    gap: 8px;
-    padding: 10px;
-  }
-
-  .detail-team.right .avatar,
-  .detail-team.right > div:not(.score-block),
-  .detail-team.right .score-block {
-    grid-column: auto;
-    grid-row: auto;
-    justify-items: start;
-    text-align: left;
-  }
-
   .slot-pill {
     min-height: 38px;
-    font-size: 11px;
+    font-size: 10px;
     border-radius: 8px;
   }
 
   .player-card {
-    grid-template-columns: 1fr;
-    gap: 5px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 6px;
     padding: 8px 0;
   }
 
-  .player-card.right .player-score,
-  .player-card.right .player-main {
-    grid-column: auto;
-    grid-row: auto;
+  .player-card.right {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 
   .player-card.right .player-score {
-    text-align: right;
-  }
-
-  .starter-row:has(.player-card.expanded) {
-    grid-template-columns: 1fr;
-  }
-
-  .starter-row:has(.player-card.expanded) .slot-pill,
-  .starter-row:has(.player-card.left.expanded) .player-card.right,
-  .starter-row:has(.player-card.right.expanded) .player-card.left {
-    display: none;
-  }
-
-  .starter-row:has(.player-card.left.expanded) .player-card.left,
-  .starter-row:has(.player-card.right.expanded) .player-card.right {
     grid-column: 1;
+    grid-row: 1;
     text-align: left;
   }
 
-  .starter-row:has(.player-card.right.expanded) .player-card.right .player-main,
-  .starter-row:has(.player-card.right.expanded) .player-card.right .player-score {
-    grid-column: auto;
-    grid-row: auto;
-    text-align: left;
+  .player-card.right .player-main {
+    grid-column: 2;
+    grid-row: 1;
   }
 
   .player-main strong {
@@ -896,7 +851,7 @@ dialog::backdrop {
 
   .player-main span,
   .player-score span,
-  .player-extra,
+  .player-statline,
   .audit-note,
   .audit-event span,
   .audit-event small,
@@ -904,26 +859,30 @@ dialog::backdrop {
     font-size: 11px;
   }
 
-  .player-extra {
-    padding: 8px;
+  .player-statline {
+    margin-top: 3px;
   }
 
-  .player-extra .audit-columns.compact {
+  .dst-drilldown {
+    padding: 10px;
+  }
+
+  .dst-drilldown .audit-columns.compact {
     grid-template-columns: 1fr;
   }
 
-  .player-extra .audit-total-row.compact {
+  .dst-drilldown .audit-total-row.compact {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .player-extra .audit-total-row.compact > div,
-  .player-extra .audit-column-head,
-  .player-extra .audit-event {
+  .dst-drilldown .audit-total-row.compact > div,
+  .dst-drilldown .audit-column-head,
+  .dst-drilldown .audit-event {
     padding: 8px;
   }
 
-  .player-extra .audit-total-row strong,
-  .player-extra .audit-column-head strong {
+  .dst-drilldown .audit-total-row strong,
+  .dst-drilldown .audit-column-head strong {
     font-size: 16px;
   }
 }

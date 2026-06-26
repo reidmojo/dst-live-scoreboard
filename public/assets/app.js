@@ -104,19 +104,25 @@ function renderMatchups(matchups) {
   for (const matchup of matchups) {
     const card = document.createElement("article");
     card.className = "matchup-card";
-    const highScore = Math.max(...matchup.teams.map((team) => Number(team.projectedCustomTotal || 0)));
-    const [leftTeam, rightTeam] = matchup.teams;
     card.innerHTML = `
       <button class="matchup-card-button" type="button" data-matchup-id="${escapeAttribute(matchup.id)}">
-        ${matchupSideHtml(leftTeam, highScore, "left")}
-        <span class="vs-pill">VS</span>
-        ${matchupSideHtml(rightTeam, highScore, "right")}
+        ${matchupCardInnerHtml(matchup)}
       </button>
     `;
     card.querySelector("[data-matchup-id]").addEventListener("click", () => openMatchup(matchup));
     els.matchups.append(card);
   }
   attachAvatarFallbacks(els.matchups);
+}
+
+function matchupCardInnerHtml(matchup) {
+  const highScore = Math.max(...matchup.teams.map((team) => Number(team.projectedCustomTotal || 0)));
+  const [leftTeam, rightTeam] = matchup.teams;
+  return `
+    ${matchupSideHtml(leftTeam, highScore, "left")}
+    <span class="vs-pill">VS</span>
+    ${matchupSideHtml(rightTeam, highScore, "right")}
+  `;
 }
 
 function matchupSideHtml(team, highScore, side) {
@@ -147,22 +153,27 @@ function openMatchup(matchup) {
   const [leftTeam, rightTeam] = matchup.teams;
   els.auditTitle.textContent = `${state.data?.selected?.season || ""} Week ${state.data?.selected?.week || ""} Matchup`;
   els.auditBody.innerHTML = `
-    <div class="matchup-detail-scoreboard">
-      ${detailTeamHtml(leftTeam, "left")}
-      <span class="vs-pill detail">VS</span>
-      ${detailTeamHtml(rightTeam, "right")}
-    </div>
+    <article class="matchup-card detail-matchup">
+      <div class="matchup-card-button static">
+        ${matchupCardInnerHtml(matchup)}
+      </div>
+    </article>
     <div class="starter-section-title">Starters</div>
     <div class="starter-board">
       ${starterRowsHtml(leftTeam, rightTeam)}
     </div>
+    <div id="dstDrilldown" class="dst-drilldown" hidden></div>
   `;
-  els.auditBody.querySelectorAll("[data-player-card]").forEach((card) => {
-    card.addEventListener("click", () => card.classList.toggle("expanded"));
+  els.auditBody.querySelectorAll("[data-defense-card]").forEach((card) => {
+    const showDefenseAudit = () => {
+      const team = [leftTeam, rightTeam].find((candidate) => String(candidate?.rosterId) === card.dataset.rosterId);
+      renderDefenseDrilldown(team);
+    };
+    card.addEventListener("click", showDefenseAudit);
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        card.classList.toggle("expanded");
+        showDefenseAudit();
       }
     });
   });
@@ -179,23 +190,6 @@ function attachAvatarFallbacks(root) {
       img.replaceWith(fallback);
     }, { once: true });
   });
-}
-
-function detailTeamHtml(team, side) {
-  if (!team) return `<div class="detail-team ${side}"></div>`;
-  return `
-    <div class="detail-team ${side}">
-      ${avatarHtml(team)}
-      <div>
-        <strong>${escapeHtml(team.teamName)}</strong>
-        <span>${escapeHtml(recordSummary(team))} · ${escapeHtml(team.manager)}</span>
-      </div>
-      <div class="score-block">
-        <strong>${fmt(team.projectedCustomTotal)}</strong>
-        <span>${fmt(team.sleeperTotal)}</span>
-      </div>
-    </div>
-  `;
 }
 
 function starterRowsHtml(leftTeam, rightTeam) {
@@ -219,22 +213,42 @@ function playerCardHtml(player, team, side) {
   if (!player || !team) return `<div class="player-card empty-player ${side}"></div>`;
   const subScore = player.isDefense ? `Sleeper ${fmt(player.sleeperScore)}` : player.team || "";
   const injury = player.injuryStatus ? `<b class="injury">${escapeHtml(player.injuryStatus)}</b>` : "";
+  const statsLine = player.statsLine ? `<p class="player-statline">${escapeHtml(player.statsLine)}</p>` : "";
+  const defenseAttrs = player.isDefense ? ` data-defense-card data-roster-id="${escapeAttribute(team.rosterId)}" role="button" tabindex="0"` : "";
   return `
-    <div class="player-card ${side}" data-player-card role="button" tabindex="0">
+    <div class="player-card ${side} ${player.isDefense ? "defense-card" : ""}"${defenseAttrs}>
       <div class="player-main">
         <strong>${escapeHtml(player.shortName || player.name)}</strong>
         <span>${escapeHtml(player.position || player.slot)} · ${escapeHtml(player.team || "")} ${injury}</span>
+        ${statsLine}
       </div>
       <div class="player-score">
         <strong>${fmt(player.score)}</strong>
         <span>${escapeHtml(subScore)}</span>
       </div>
-      <div class="player-extra">
-        <p>${escapeHtml(player.statsLine || "No scoring details available yet.")}</p>
-        ${player.isDefense ? defenseAuditHtml(team) : ""}
-      </div>
     </div>
   `;
+}
+
+function renderDefenseDrilldown(team) {
+  const panel = els.auditBody.querySelector("#dstDrilldown");
+  if (!panel || !team) return;
+  panel.hidden = false;
+  panel.innerHTML = `
+    <div class="dst-drilldown-head">
+      <div>
+        <span>D/ST Audit</span>
+        <strong>${escapeHtml(team.teamName)} · ${escapeHtml(team.dstTeam || "DEF")}</strong>
+      </div>
+      <button type="button" data-close-drilldown>Close</button>
+    </div>
+    ${defenseAuditHtml(team)}
+  `;
+  panel.querySelector("[data-close-drilldown]").addEventListener("click", () => {
+    panel.hidden = true;
+    panel.innerHTML = "";
+  });
+  panel.scrollIntoView({ block: "nearest" });
 }
 
 function defenseAuditHtml(team) {
