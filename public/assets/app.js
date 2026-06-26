@@ -131,6 +131,7 @@ function matchupSideHtml(team, highScore, side) {
   if (!team) return `<div class="matchup-side ${side} empty-side"></div>`;
   const isLeader = Number(team.projectedCustomTotal || 0) === highScore;
   const meterClass = isLeader ? "winner" : "loser";
+  const meterWidth = isLeader ? 100 : 3;
   const record = recordSummary(team);
   return `
     <div class="matchup-side ${side} ${isLeader ? "leader" : ""}">
@@ -141,11 +142,10 @@ function matchupSideHtml(team, highScore, side) {
           <span>${fmt(team.sleeperTotal)}</span>
         </div>
       </div>
-      <div class="matchup-meter ${meterClass}"><span style="width:${isLeader ? 100 : 0}%"></span></div>
+      <div class="matchup-meter ${meterClass}"><span style="width:${meterWidth}%"></span></div>
       <div class="matchup-main">
         <strong>${escapeHtml(team.teamName)}</strong>
         <span>${escapeHtml(record)} · ${escapeHtml(team.manager)}</span>
-        <small>${team.dstTeam || "No DEF"} ${signed(team.customDstPoints)} DST</small>
       </div>
     </div>
   `;
@@ -226,7 +226,7 @@ function starterRowsHtml(leftTeam, rightTeam) {
 
 function playerCardHtml(player, team, side) {
   if (!player || !team) return `<div class="player-card empty-player ${side}"></div>`;
-  const subScore = player.isDefense ? `Sleeper ${fmt(player.sleeperScore)}` : player.team || "";
+  const subScore = player.isDefense ? `Sleeper ${fmt(player.sleeperScore)}` : projectionText(player.projectedScore);
   const injury = player.injuryStatus ? `<b class="injury">${escapeHtml(player.injuryStatus)}</b>` : "";
   const statsLine = player.statsLine ? `<p class="player-statline">${escapeHtml(player.statsLine)}</p>` : "";
   const defenseAttrs = player.isDefense ? ` data-defense-card data-roster-id="${escapeAttribute(team.rosterId)}" role="button" tabindex="0"` : "";
@@ -239,10 +239,14 @@ function playerCardHtml(player, team, side) {
       </div>
       <div class="player-score">
         <strong>${fmt(player.score)}</strong>
-        <span>${escapeHtml(subScore)}</span>
+        ${subScore ? `<span>${escapeHtml(subScore)}</span>` : ""}
       </div>
     </div>
   `;
+}
+
+function projectionText(value) {
+  return value == null ? "" : fmt(value);
 }
 
 function renderDefenseDrilldown(team) {

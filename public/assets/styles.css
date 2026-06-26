@@ -324,7 +324,7 @@ button:disabled {
 }
 
 .matchup-meter.loser {
-  background: rgba(255, 94, 129, 0.52);
+  background: #3d4a75;
 }
 
 .matchup-meter span {
@@ -336,6 +336,10 @@ button:disabled {
 
 .matchup-side.leader .matchup-meter span {
   background: var(--green);
+}
+
+.matchup-meter.loser span {
+  background: var(--red);
 }
 
 .matchup-side.leader .score-block strong {

@@ -86,6 +86,7 @@ Server cache TTLs:
 - ESPN scoreboard and summaries: 20 seconds
 - Sleeper matchups: 30 seconds
 - Sleeper weekly player stats: 30 seconds
+- Sleeper weekly player projections: 5 minutes
 - Sleeper NFL state: 60 seconds
 - Sleeper league, rosters, users: 5 minutes
 

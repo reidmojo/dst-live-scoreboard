@@ -89,13 +89,14 @@ async function buildDashboard(url) {
   const weeks = weekOptionsForSeason(Number(season), seasons.at(-1), defaultSelectedWeek);
   const requestedWeek = Number(url.searchParams.get("week") || 0);
   const week = selectWeek(requestedWeek, weeks);
-  const [rosters, users, matchups, scoreboard, playersById, playerStats] = await Promise.all([
+  const [rosters, users, matchups, scoreboard, playersById, playerStats, playerProjections] = await Promise.all([
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/rosters`, { ttlMs: 300_000, requestState, label: "Sleeper rosters" }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/users`, { ttlMs: 300_000, requestState, label: "Sleeper users" }),
     fetchJson(`${SLEEPER_BASE}/league/${LEAGUE_ID}/matchups/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper matchups" }),
     fetchJson(`${ESPN_SCOREBOARD}?seasontype=2&week=${week}&dates=${season}`, { ttlMs: 20_000, requestState, label: "ESPN scoreboard" }),
     fetchJson(`${SLEEPER_BASE}/players/nfl`, { ttlMs: 43_200_000, requestState, label: "Sleeper player metadata" }),
-    fetchJson(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper player stats" })
+    fetchJson(`${SLEEPER_BASE}/stats/nfl/regular/${season}/${week}`, { ttlMs: 30_000, allow404: true, requestState, label: "Sleeper player stats" }),
+    fetchJson(`${SLEEPER_BASE}/projections/nfl/regular/${season}/${week}`, { ttlMs: 300_000, allow404: true, requestState, label: "Sleeper player projections" })
   ]);
 
   const events = scoreboard.events || [];
@@ -121,6 +122,8 @@ async function buildDashboard(url) {
     espnScores,
     playersById,
     playerStats: playerStats || {},
+    playerProjections: playerProjections || {},
+    scoringSettings: league.scoring_settings || {},
     rosterPositions: league.roster_positions || []
   });
   const matchupsView = buildMatchups(teams);
@@ -316,7 +319,7 @@ function timeZoneOffsetMs(date, timeZone) {
   return asUtc - date.getTime();
 }
 
-function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, playerStats, rosterPositions }) {
+function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, playerStats, playerProjections, scoringSettings, rosterPositions }) {
   const usersById = new Map(users.map((user) => [user.user_id, user]));
   const matchupsByRoster = new Map(matchups.map((matchup) => [matchup.roster_id, matchup]));
   const hasScoredMatchups = matchups.some((matchup) => matchup.matchup_id != null);
@@ -375,6 +378,8 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, p
           rosterPositions,
           playersById,
           playerStats,
+          playerProjections,
+          scoringSettings,
           dstTeam,
           customDst,
           sleeperDstPoints
@@ -384,10 +389,11 @@ function buildLeagueTeams({ rosters, users, matchups, espnScores, playersById, p
     .sort((a, b) => b.projectedCustomTotal - a.projectedCustomTotal);
 }
 
-function buildStarters({ starters, startersPoints, playersPoints, rosterPositions, playersById, playerStats, dstTeam, customDst, sleeperDstPoints }) {
+function buildStarters({ starters, startersPoints, playersPoints, rosterPositions, playersById, playerStats, playerProjections, scoringSettings, dstTeam, customDst, sleeperDstPoints }) {
   return starters.map((playerId, index) => {
     const player = playersById?.[playerId] || {};
     const stats = playerStats?.[playerId] || {};
+    const projection = playerProjections?.[playerId] || {};
     const isDefense = isDefenseId(playerId);
     const sleeperScore = round(Number(startersPoints[index] ?? playersPoints[playerId] ?? 0));
     const score = isDefense && playerId === dstTeam ? round(customDst.points) : sleeperScore;
@@ -405,12 +411,23 @@ function buildStarters({ starters, startersPoints, playersPoints, rosterPosition
       status: player.status || "",
       score,
       sleeperScore,
+      projectedScore: isDefense ? null : projectionPoints(projection, scoringSettings),
       customScore: isDefense ? round(customDst.points) : null,
       isDefense,
       statsLine: playerStatsLine(position, stats),
       detail: playerDetail(player)
     };
   });
+}
+
+function projectionPoints(projection, scoringSettings = {}) {
+  const receptionValue = Number(scoringSettings.rec ?? 1);
+  const preferredKey = receptionValue >= 1 ? "pts_ppr" : receptionValue > 0 ? "pts_half_ppr" : "pts_std";
+  const value = statValue(projection, preferredKey)
+    ?? statValue(projection, "pts_ppr")
+    ?? statValue(projection, "pts_half_ppr")
+    ?? statValue(projection, "pts_std");
+  return value == null ? null : round(value);
 }
 
 function playerStatsLine(position, stats = {}) {
