@@ -2,8 +2,7 @@ const state = {
   data: null,
   selectedTeam: null,
   timer: null,
-  hasLoaded: false,
-  scrollY: 0
+  hasLoaded: false
 };
 
 const els = {
@@ -27,8 +26,9 @@ async function boot() {
   els.refreshButton.addEventListener("click", loadDashboard);
   els.weekSelect.addEventListener("change", loadDashboard);
   els.seasonSelect.addEventListener("change", loadDashboard);
-  els.closeDialog.addEventListener("click", () => els.auditDialog.close());
-  els.auditDialog.addEventListener("close", unlockPageScroll);
+  els.closeDialog.addEventListener("click", closeMatchup);
+  els.auditDialog.addEventListener("close", cleanupMatchup);
+  els.auditDialog.addEventListener("cancel", cleanupMatchup);
   els.leagueAvatar?.addEventListener("error", () => {
     els.leagueAvatar.removeAttribute("src");
     els.leagueAvatar.parentElement.dataset.fallback = "IW";
@@ -153,6 +153,7 @@ function matchupSideHtml(team, highScore, side) {
 
 function openMatchup(matchup) {
   const [leftTeam, rightTeam] = matchup.teams;
+  if (els.auditDialog.open) closeMatchup();
   els.auditTitle.textContent = `${state.data?.selected?.season || ""} Week ${state.data?.selected?.week || ""} Matchup`;
   els.auditBody.innerHTML = `
     <article class="matchup-card detail-matchup">
@@ -166,34 +167,43 @@ function openMatchup(matchup) {
     </div>
     <div id="dstDrilldown" class="dst-drilldown" hidden></div>
   `;
-  els.auditBody.querySelectorAll("[data-defense-card]").forEach((card) => {
-    const showDefenseAudit = () => {
-      const team = [leftTeam, rightTeam].find((candidate) => String(candidate?.rosterId) === card.dataset.rosterId);
-      renderDefenseDrilldown(team);
-    };
-    card.addEventListener("click", showDefenseAudit);
-    card.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        showDefenseAudit();
-      }
-    });
-  });
-  lockPageScroll();
-  els.auditDialog.showModal();
+  els.auditBody.onclick = (event) => {
+    const card = event.target.closest("[data-defense-card]");
+    if (!card) return;
+    const team = [leftTeam, rightTeam].find((candidate) => String(candidate?.rosterId) === card.dataset.rosterId);
+    renderDefenseDrilldown(team);
+  };
+  els.auditBody.onkeydown = (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const card = event.target.closest("[data-defense-card]");
+    if (!card) return;
+    event.preventDefault();
+    const team = [leftTeam, rightTeam].find((candidate) => String(candidate?.rosterId) === card.dataset.rosterId);
+    renderDefenseDrilldown(team);
+  };
+  document.body.classList.add("modal-open");
+  els.auditDialog.scrollTop = 0;
+  try {
+    els.auditDialog.showModal();
+  } catch (error) {
+    cleanupMatchup();
+    throw error;
+  }
   attachAvatarFallbacks(els.auditDialog);
 }
 
-function lockPageScroll() {
-  state.scrollY = window.scrollY || document.documentElement.scrollTop || 0;
-  document.body.classList.add("modal-open");
-  document.body.style.top = `-${state.scrollY}px`;
+function closeMatchup() {
+  if (els.auditDialog.open) {
+    els.auditDialog.close();
+    return;
+  }
+  cleanupMatchup();
 }
 
-function unlockPageScroll() {
+function cleanupMatchup() {
+  els.auditBody.onclick = null;
+  els.auditBody.onkeydown = null;
   document.body.classList.remove("modal-open");
-  document.body.style.top = "";
-  window.scrollTo(0, state.scrollY || 0);
 }
 
 function attachAvatarFallbacks(root) {

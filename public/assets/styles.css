@@ -27,10 +27,6 @@ body {
 }
 
 body.modal-open {
-  position: fixed;
-  left: 0;
-  right: 0;
-  width: 100%;
   overflow: hidden;
 }
 
@@ -42,7 +38,7 @@ select {
 .shell {
   width: min(1440px, 100%);
   margin: 0 auto;
-  padding: 24px 24px 96px;
+  padding: 24px;
 }
 
 .topbar {
@@ -150,13 +146,10 @@ button:disabled {
 }
 
 .status-strip {
-  position: fixed;
-  right: max(16px, calc((100vw - 1440px) / 2 + 24px));
-  bottom: 14px;
-  z-index: 3;
   display: grid;
-  width: min(420px, calc(100vw - 32px));
-  margin: 0;
+  width: min(420px, 100%);
+  margin-top: 16px;
+  margin-left: auto;
 }
 
 .status-strip > div {
@@ -763,7 +756,7 @@ dialog::backdrop {
 
 @media (max-width: 760px) {
   .shell {
-    padding: 16px 16px 96px;
+    padding: 16px;
   }
 
   .topbar,
@@ -782,10 +775,8 @@ dialog::backdrop {
   }
 
   .status-strip {
-    right: 12px;
-    bottom: 10px;
-    left: 12px;
-    width: auto;
+    width: 100%;
+    margin-left: 0;
   }
 
   .status-strip > div {
