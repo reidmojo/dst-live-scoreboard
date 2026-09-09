@@ -9,7 +9,7 @@ const SCORING = {
   safety: 2,
 };
 
-export const SCORING_VERSION = "2026-09-09.2";
+export const SCORING_VERSION = "2026-09-09.3";
 const TAKEOVER_RESULTS = /PUNT|INTERCEPT|^INT$|FUMBLE|DOWNS|MISSED|BLOCKED/;
 const NO_BUCKET_RESULTS = new Set(["END OF HALF", "END OF GAME", "END OF REGULATION"]);
 
@@ -97,6 +97,51 @@ function normalizeGame(event, summary, oldScoring) {
     issues: [],
   }));
   const scoreByTeam = new Map(teamScores.map((score) => [score.team, score]));
+  const recoveredKickIds = new Set();
+  const seenKickIds = new Set();
+
+  // A recovered kick is its own special-teams event. ESPN can attach a kickoff
+  // to the recovering team's drive, or a muffed punt to the kicking team's drive.
+  drives.forEach((drive, driveIndex) => {
+    (drive.plays || []).forEach((play, playIndex) => {
+      if (!isKick(play) || isNoPlay(play) || !/ONSIDE|MUFF|FUMBL|RECOVER/i.test(`${play.type?.text || ""} ${play.text || ""}`)) return;
+      const key = play.id ? String(play.id) : null;
+      if (key && seenKickIds.has(key)) return;
+      if (key) seenKickIds.add(key);
+      const kickingTeam = resolveTeam(play.start?.team);
+      const possession = possessionAfterKick(drives, driveIndex, playIndex, resolveTeam);
+      if (isTouchdown(play) || (key && scoringPlays.some((candidate) => String(candidate.id) === key && isTouchdown(candidate)))) return;
+      // A routine receipt, failed onside kick, or receiving team's own muff
+      // recovery is not a kicking-team recovery award.
+      if (possession && possession.team.abbreviation !== kickingTeam && kickingTeam) return;
+      const opponent = teamInfo.find((team) => team.abbreviation !== kickingTeam)?.abbreviation;
+      const score = scoreByTeam.get(kickingTeam);
+      if (!score) {
+        for (const candidate of teamScores) candidate.issues.push("Kick recovery awaiting kicking-team confirmation");
+        return;
+      }
+      // Missing next possession cannot establish a recovery from an ordinary muff.
+      // Explicit end-of-half/game plays also have no offensive-possession bucket.
+      if (!possession) {
+        if (!NO_BUCKET_RESULTS.has(String(drive.result || "").toUpperCase())
+          && resolveTeam(play.end?.team) === kickingTeam) {
+          score.issues.push("Kick recovery awaiting offensive possession");
+        }
+        return;
+      }
+      if (key) recoveredKickIds.add(key);
+      const bucket = takeoverBucket(possession, opponent, kickingTeam, teamsByAbbr);
+      const component = {
+        kind: "special_teams_recovery", label: bucket ? `Special-teams recovery: ${bucket.label}` : "Kick recovery awaiting field position",
+        points: bucket?.points || 0, pending: !bucket, bucket: bucket?.name || null, takeover: bucket?.takeover || "",
+        gameId: event.id, playId: play.id, sequence: driveIndex + 1, period: play.period?.number,
+        clock: play.clock?.displayValue || "", description: play.text || "", source: "ESPN",
+      };
+      score.points += component.points;
+      score.components.push(component);
+      if (component.pending) score.issues.push(component.label);
+    });
+  });
 
   drives.forEach((drive, index) => {
     const offense = resolveTeam(drive.team);
@@ -111,6 +156,8 @@ function normalizeGame(event, summary, oldScoring) {
       drive,
       nextDrive: drives[index + 1] ? { ...drives[index + 1], team: { abbreviation: resolveTeam(drives[index + 1].team) } } : null,
       scoringPlays,
+      recoveredKickIds,
+      resolveTeam,
       offense,
       defense,
       teamsByAbbr,
@@ -262,7 +309,7 @@ function recoveredByDefense(text, defense, offense) {
   return text.includes("RECOVERED BY") && !text.includes("RECOVERED BY TEAM");
 }
 
-function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence, scoringPlays }) {
+function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence, scoringPlays, recoveredKickIds, resolveTeam }) {
   const result = String(drive.result || drive.shortDisplayResult || drive.displayResult || "").toUpperCase();
   const displayResult = drive.displayResult || drive.shortDisplayResult || drive.result || "Drive";
   const base = {
@@ -280,13 +327,15 @@ function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence,
   };
   const drivePlays = (drive.plays || []).map((play) => scoringPlays.find((candidate) => candidate.id && candidate.id === play.id) || play);
   const touchdown = drivePlays.find(isTouchdown);
+  const retainedPossessionTd = touchdown && !isKick(touchdown)
+    && resolveTeam(touchdown.start?.team) === offense && resolveTeam(touchdown.end?.team) === offense;
   const returnResult = /(?:INT|INTERCEPTION|FUMBLE|PUNT|KICKOFF|BLOCKED).*?(?:TD|TOUCHDOWN)/.test(result);
-  if (returnResult || drivePlays.some(isReturnTouchdown)) {
+  if ((returnResult && !retainedPossessionTd) || drivePlays.some(isReturnTouchdown)) {
     // Return points are credited separately to the scoring team, never charged as an offensive TD.
     if (!drivePlays.some(isReturnTouchdown)) return { ...base, kind: "pending", points: 0, pending: true, label: "Return touchdown awaiting play confirmation" };
     return null;
   }
-  if (result === "TD" || result === "TOUCHDOWN") {
+  if (result === "TD" || result === "TOUCHDOWN" || retainedPossessionTd) {
     if (touchdown && String((touchdown.team || touchdown.end?.team)?.id || "") === String(teamsByAbbr.get(defense)?.id)) return null;
     return { ...base, kind: "touchdown_allowed", label: "TD allowed", points: SCORING.touchdownAllowed };
   }
@@ -295,6 +344,25 @@ function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence,
   }
   if (NO_BUCKET_RESULTS.has(result)) return null;
   const safety = result.includes("SAFETY");
+  const terminalPlay = drivePlays.filter(isPossessionPlay).at(-1);
+  if (!safety && terminalPlay) {
+    // A kick recovery already has its own award; never also treat a receiving
+    // team's kick-only FUMBLE record as a second defensive possession.
+    if (recoveredKickIds.has(String(terminalPlay.id))) return null;
+    if (!isKick(terminalPlay) && /INTERCEPT|FUMBL/i.test(`${terminalPlay.type?.text || ""} ${terminalPlay.text || ""}`)) {
+      const startedBy = resolveTeam(terminalPlay.start?.team);
+      const endedBy = resolveTeam(terminalPlay.end?.team);
+      if (/INTERCEPT.*FUMBL|FUMBL.*FUMBL/i.test(`${terminalPlay.type?.text || ""} ${terminalPlay.text || ""}`)
+        && (!teamsByAbbr.has(startedBy) || !teamsByAbbr.has(endedBy))) {
+        return { ...base, kind: "pending", points: 0, pending: true, label: "Multiple-turnover play awaiting possession confirmation" };
+      }
+      // The original offense recovering during this same play retains possession.
+      // A duplicate, snapless drive assigned to the temporary possessor cannot
+      // create a bucket for either team. A later snapped play is scored normally.
+      if (startedBy && startedBy === endedBy) return null;
+      if (startedBy && startedBy !== offense) return null;
+    }
+  }
   if (!safety && !TAKEOVER_RESULTS.test(result)) {
     return { ...base, kind: "pending", label: `Unrecognized drive result: ${displayResult}`, points: 0, pending: true };
   }
@@ -302,8 +370,10 @@ function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence,
   const nextPeriod = nextDrive?.start?.period?.number;
   // A halftime/overtime kickoff is not the takeover from the preceding possession.
   const crossesBreak = (endPeriod <= 2 && nextPeriod >= 3) || (endPeriod <= 4 && nextPeriod >= 5);
-  const bucket = crossesBreak ? null : takeoverBucket(nextDrive, offense, defense, teamsByAbbr);
-  const pending = !crossesBreak && nextDrive?.team?.abbreviation === defense && !bucket;
+  const kickOnlyRecovery = nextDrive?.plays?.some((play) => recoveredKickIds.has(String(play.id)))
+    && !nextDrive.plays.some((play) => isPossessionPlay(play) && !isKickoff(play));
+  const bucket = crossesBreak || kickOnlyRecovery ? null : takeoverBucket(nextDrive, offense, defense, teamsByAbbr);
+  const pending = !crossesBreak && !kickOnlyRecovery && nextDrive?.team?.abbreviation === defense && !bucket;
   if (!bucket && !safety && !pending) return null;
   return {
     ...base,
@@ -314,6 +384,58 @@ function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence,
     bucket: bucket?.name || null,
     takeover: bucket?.takeover || "",
   };
+}
+
+function isNoPlay(play) {
+  return /\bNO PLAY\b|\bNULLIFIED\b/i.test(play.text || "");
+}
+
+function isKick(play) {
+  return /PUNT|KICKOFF|KICK RETURN|FREE KICK/i.test(play.type?.text || "")
+    || /\bpunts? \d+ yards|\bkicks (?:onside )?\d+ yards/i.test(play.text || "");
+}
+
+function isPossessionPlay(play) {
+  return !isNoPlay(play) && !/TIMEOUT|TWO.MINUTE|END.*(?:PERIOD|QUARTER|HALF|GAME|REGULATION)|TWO.POINT|EXTRA POINT|CONVERSION|PENALTY/i.test(play.type?.text || "");
+}
+
+function isKickoff(play) {
+  return /KICKOFF|KICK RETURN|FREE KICK/i.test(play.type?.text || "") || /\bkicks (?:onside )?\d+ yards/i.test(play.text || "");
+}
+
+function possessionAfterKick(drives, driveIndex, playIndex, resolveTeam) {
+  const drive = drives[driveIndex];
+  const kick = drive.plays[playIndex];
+  const period = kick.period?.number || drive.end?.period?.number;
+  const beforeKick = drive.plays.slice(0, playIndex).some((play) => isPossessionPlay(play) && !isKickoff(play));
+  for (let index = driveIndex; index < drives.length; index += 1) {
+    const candidate = drives[index];
+    const plays = (candidate.plays || []).slice(index === driveIndex ? playIndex + 1 : 0)
+      .filter((play) => (!kick.id || play.id !== kick.id) && isPossessionPlay(play));
+    // Another kickoff starts a different possession sequence (or replaces a kick).
+    if (plays[0] && isKickoff(plays[0])) return null;
+    const nextPeriod = plays[0]?.period?.number || candidate.start?.period?.number;
+    if ((period <= 2 && nextPeriod >= 3) || (period <= 4 && nextPeriod >= 5)) return null;
+    if (plays.length) {
+      return {
+        team: { abbreviation: resolveTeam(plays[0].start?.team) || resolveTeam(candidate.team) },
+        // A leading kickoff's drive start incorporates the return and enforcement.
+        // A punt recovered within one drive uses the ensuing snap's starting spot.
+        start: { text: index === driveIndex && beforeKick ? plays[0].start?.possessionText : candidate.start?.text },
+      };
+    }
+    const result = candidate.result || candidate.shortDisplayResult || candidate.displayResult;
+    const duplicateOnly = (candidate.plays || []).some((play) => kick.id && play.id === kick.id);
+    if (!result && (index !== driveIndex || (isKickoff(kick) && !beforeKick))) {
+      return { team: { abbreviation: resolveTeam(candidate.team) }, start: candidate.start };
+    }
+    // Completed drives with no play detail still confirm a possession, except a
+    // duplicate kick-only record or the drive that ended with the kick itself.
+    if (index !== driveIndex && !duplicateOnly && result && candidate.offensivePlays !== 0) {
+      return { team: { abbreviation: resolveTeam(candidate.team) }, start: candidate.start };
+    }
+  }
+  return null;
 }
 
 function uniqueById(items) {
@@ -340,6 +462,8 @@ function isTouchdown(play) {
 
 function isReturnTouchdown(play) {
   if (!isTouchdown(play)) return false;
+  if (isKick(play)) return true;
+  if (play.start?.team?.id && String(play.start.team.id) === String(play.end?.team?.id)) return false;
   const type = String(play.type?.text || "").toUpperCase();
   if (/PASSING|RUSHING|OFFENSIVE/.test(type)) return false;
   if (/INTERCEPTION|FUMBLE RETURN|FUMBLE RECOVERY \(OPPONENT\)|DEFENSIVE|PUNT|KICKOFF|KICK RETURN|BLOCKED/.test(type)) return true;
