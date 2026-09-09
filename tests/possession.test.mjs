@@ -81,11 +81,11 @@ test('nullified kick recovery does not award points', () => {
 });
 test('punt recovered for touchdown gets six only, including duplicate scoring feed', () => {
   const p = kick({ type: { text: 'Punt Touchdown' }, scoringPlay: true, scoringType: { name: 'touchdown' }, team: A });
-  totals(score([puntDrive(p, { result: 'TD' })], possession(A), [p]), 6, 0);
+  totals(score([puntDrive(p, { result: 'TD' })], possession(A), [p]), 6, -1);
 });
 test('kickoff fumble recovered by kicking team for touchdown gets six only', () => {
   const p = kick({ type: { text: 'Kickoff' }, text: 'BAL kicks 60 yards. IND FUMBLES. RECOVERED by BAL for TOUCHDOWN.', scoringPlay: true, scoringType: { name: 'touchdown' }, team: A });
-  totals(score([puntDrive(p, { result: 'TD' })], possession(A), [p]), 6, 0);
+  totals(score([puntDrive(p, { result: 'TD' })], possession(A), [p]), 6, -1);
 });
 test('safety followed by conceding team recovering free kick: safety and recovery go to different DSTs', () => {
   const safety = puntDrive(null, { result: 'SAFETY', plays: [] });
