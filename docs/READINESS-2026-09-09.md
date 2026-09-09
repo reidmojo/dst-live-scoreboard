@@ -47,7 +47,7 @@ Unhealthy or unresolved data is never newly finalized. Snapshots from the previo
 
 ## Evidence and limits
 
-The complete project test suite has 72 passing tests; the public scorer has 40 passing regression/replay tests. The production-compatible build succeeds. Targeted lint has zero errors and only existing image-optimization warnings.
+The complete project test suite has 72 passing tests; the public scorer has 40 passing regression/replay tests. The production-compatible build and TypeScript check succeed. Cloudflare runtime declarations were generated to make the Worker typecheck reproducible. Targeted lint has zero errors and only existing image-optimization warnings.
 
 This does not promise zero discrepancies against future official corrections. Sleeper and ESPN publish asynchronously, ESPN's site feed is unofficial, and an incorrect upstream play can be faithfully transmitted. The app now makes delayed, incomplete, and unreconciled states visible. The first actual 2026 live drive remains unobserved in this pregame review. In-progress behavior was tested using fixtures and provider-failure simulations.
 
