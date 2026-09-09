@@ -25,7 +25,7 @@ The `opponent 49 through opponent 20` bucket is intentionally `+2.5`.
 
 ## How Takeover Buckets Are Determined
 
-For non-scoring opponent drives, the scorer looks at the next ESPN drive. If the next drive belongs to the defense, the next drive's starting field position is treated as the takeover spot.
+For non-scoring opponent drives, the scorer looks at the next ESPN drive, including the current active drive. If the next drive belongs to the defense, the next drive's starting field position is treated as the takeover spot.
 
 Penalties against either team that affect the next drive's starting field position are therefore baked into the drive result. The scorer does not try to reconstruct the field position before those penalties. It uses the actual next-drive start reported by ESPN.
 
@@ -36,7 +36,7 @@ Examples:
 - Opponent turns it over, defense starts at opponent 42: `+2.5`
 - Opponent turns it over, defense starts at opponent 12: `+3.5`
 
-If there is no next defensive possession, the app does not award a takeover bucket. This commonly applies to end-of-half and end-of-game drives.
+If there is no next defensive possession, the app does not award a takeover bucket. This commonly applies to end-of-half and end-of-game drives. A halftime or overtime kickoff never supplies a takeover bucket for the preceding period. Missing/invalid takeover locations and unknown drive results are surfaced as unresolved scoring issues.
 
 ## Touchdowns And Field Goals
 
@@ -49,9 +49,9 @@ Those drives do not also receive a field-position takeover bucket.
 
 ## D/ST Touchdowns
 
-If ESPN marks a scoring play that appears to be caused by the defense or special teams, the scorer awards `+6`.
+A confirmed defensive or special-teams return touchdown earns `+6`, credited to the scoring team using ESPN’s structured play type and team identity. The same play is deduplicated across the drive and scoring-play feeds. Kickoff returns can appear outside the completed drive list. Offensive fumble-recovery touchdowns and conversion returns are not six-point defensive touchdowns.
 
-If the D/ST touchdown also creates a detectable next-drive takeover spot, the audit row can show the touchdown plus the takeover bucket. The scoring code supports this combination, but the exact result depends on how ESPN represents the drive and next possession.
+Return-touchdown possessions earn the touchdown award; they do not receive an unrelated ensuing kickoff field-position bucket.
 
 ## Safeties
 
@@ -65,7 +65,7 @@ Safety + defense takes over at own 35 = +2 + 1.5 = +3.5
 
 ## Old Sleeper DST Score
 
-The app uses Sleeper's live D/ST score as the authoritative old-scoring total. The old-scoring audit rows are an ESPN-derived estimate reconciled to Sleeper's D/ST total.
+The app uses Sleeper's live D/ST score as the authoritative old-scoring total. The production app derives old-scoring audit rows from Sleeper weekly stats and the league's scoring settings, reconciled to the official matchup D/ST total. The legacy Node app still uses an ESPN estimate.
 
 This means:
 
