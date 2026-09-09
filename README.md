@@ -2,6 +2,10 @@
 
 Live custom DST scoring dashboard for a Sleeper fantasy league.
 
+**Production:** [r31d.wiki/fantasy_football/dst](https://r31d.wiki/fantasy_football/dst) runs as a Sites/Cloudflare Worker with D1. The Node/Render app in this repository is the original standalone implementation; deploying it does not update r31d.wiki. `src/scoring.js` is mirrored in the production project's `lib/dst/scoring.js`; keep these byte-identical when changing the custom rules. The production React UI, league rollover, and durable cache are managed in the r31d.wiki Sites source project.
+
+Run `npm test` for boundary/return/active-drive regressions and a replay of all 323 drives from 2025 Week 1. See [the readiness review](docs/READINESS-2026-09-09.md).
+
 The app combines:
 
 - Sleeper league rosters, starters, and live non-DST scoring

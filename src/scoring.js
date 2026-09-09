@@ -6,10 +6,12 @@ const SCORING = {
   offense49To20: 2.5,
   offenseLt20: 3.5,
   dstTouchdown: 6,
-  safety: 2
+  safety: 2,
 };
 
-const SCORING_RESULTS = new Set(["TD", "TOUCHDOWN", "FG", "FIELD GOAL"]);
+export const SCORING_VERSION = "2026-09-09.5";
+export const FINAL_DST_FLOOR = -4;
+const TAKEOVER_RESULTS = /PUNT|INTERCEPT|^INT$|FUMBLE|DOWNS|MISSED|BLOCKED/;
 const NO_BUCKET_RESULTS = new Set(["END OF HALF", "END OF GAME", "END OF REGULATION"]);
 
 export function teamAbbr(team) {
@@ -28,14 +30,20 @@ export function scoreWeekFromEspn(events, summaries, oldScoring = {}) {
     for (const score of game.teamScores) {
       const current = byTeam.get(score.team) || emptyTeamScore(score.team);
       current.points += score.points;
+      current.rawPoints += score.rawPoints;
+      current.floorAdjustment += score.floorAdjustment;
       current.components.push(...score.components);
+      current.issues.push(...(score.issues || []));
       current.oldComponents.push(...(score.oldAudit?.components || []));
       current.oldEstimatedPoints += score.oldAudit?.estimatedPoints || 0;
       current.games.push({
         gameId: game.id,
         opponent: score.opponent,
         status: game.status,
-        points: round(score.points)
+        completed: game.completed,
+        rawPoints: score.rawPoints,
+        floorAdjustment: score.floorAdjustment,
+        points: round(score.points),
       });
       byTeam.set(score.team, current);
     }
@@ -43,13 +51,17 @@ export function scoreWeekFromEspn(events, summaries, oldScoring = {}) {
 
   for (const score of byTeam.values()) {
     score.points = round(score.points);
+    score.rawPoints = round(score.rawPoints);
+    score.floorAdjustment = round(score.floorAdjustment);
     score.oldEstimatedPoints = round(score.oldEstimatedPoints);
-    score.components.sort((a, b) => a.sequence - b.sequence);
+    score.components.sort((a, b) => String(a.gameId).localeCompare(String(b.gameId))
+      || Number(a.kind === "final_score_floor") - Number(b.kind === "final_score_floor")
+      || (a.period || 0) - (b.period || 0) || clockSeconds(b.clock) - clockSeconds(a.clock) || a.sequence - b.sequence);
   }
 
   return {
     games,
-    dstScores: Object.fromEntries([...byTeam.entries()].sort())
+    dstScores: Object.fromEntries([...byTeam.entries()].sort()),
   };
 }
 
@@ -57,15 +69,24 @@ function emptyTeamScore(team) {
   return {
     team,
     points: 0,
+    rawPoints: 0,
+    floorAdjustment: 0,
     components: [],
+    issues: [],
     oldComponents: [],
     oldEstimatedPoints: 0,
-    games: []
+    games: [],
   };
 }
 
 function normalizeGame(event, summary, oldScoring) {
   const competition = event.competitions?.[0] || summary?.header?.competitions?.[0] || {};
+  const status = [event.status, competition.status, summary?.header?.competitions?.[0]?.status]
+    .find((candidate) => candidate?.type?.state) || {};
+  // A zero clock or END OF GAME drive is not enough: wait for the provider's
+  // completed, postgame status. A suspended/canceled game is not a final score.
+  const completed = status.type?.state === "post" && status.type?.completed === true
+    && (!status.type?.name || /^STATUS_FINAL(?:_|$)/.test(status.type.name));
   const competitors = competition.competitors || [];
   const teamInfo = competitors.map((competitor) => ({
     id: String(competitor.id || competitor.team?.id || ""),
@@ -75,50 +96,170 @@ function normalizeGame(event, summary, oldScoring) {
     logo: competitor.team?.logo || competitor.team?.logos?.[0]?.href || "",
     color: competitor.team?.color || "1f2937",
     homeAway: competitor.homeAway || "",
-    score: Number(competitor.score || 0)
+    score: Number(competitor.score || 0),
   }));
   const teamsById = new Map(teamInfo.map((team) => [team.id, team]));
   const teamsByAbbr = new Map(teamInfo.map((team) => [team.abbreviation, team]));
-  const drives = summary?.drives?.previous || [];
   const activeDrive = summary?.drives?.current;
+  const drives = uniqueById([...(summary?.drives?.previous || []), ...(activeDrive ? [activeDrive] : [])]);
+  const scoringPlayRecords = [
+    ...drives.flatMap((drive) => (drive.plays || []).filter((play) => play.scoringPlay)),
+    ...(summary?.scoringPlays || []).map((play) => ({ ...play, scoringPlay: true })),
+  ];
+  // Scoring summaries can shorten a kickoff recovery to "Fumble Return TD".
+  // Keep the kick-phase evidence from either collection before merging by ID.
+  const specialTeamsPlayIds = new Set([...drives.flatMap((drive) => drive.plays || []), ...scoringPlayRecords]
+    .filter(isSpecialTeamsPlay).filter((play) => play.id).map((play) => String(play.id)));
+  const scoringPlays = uniqueById(scoringPlayRecords).map((play) => ({ ...play,
+    specialTeamsPhase: isSpecialTeamsPlay(play) || (play.id && specialTeamsPlayIds.has(String(play.id))) || false,
+  }));
+  const resolveTeam = (team) => teamsById.get(String(team?.id || ""))?.abbreviation || team?.abbreviation || "";
   const teamScores = teamInfo.map((team) => ({
     team: team.abbreviation,
     opponent: teamInfo.find((other) => other.abbreviation !== team.abbreviation)?.abbreviation || "",
     points: 0,
-    components: []
+    components: [],
+    issues: [],
   }));
   const scoreByTeam = new Map(teamScores.map((score) => [score.team, score]));
+  const recoveredKickIds = new Set();
+  const seenKickIds = new Set();
+
+  // A recovered kick is its own special-teams event. ESPN can attach a kickoff
+  // to the recovering team's drive, or a muffed punt to the kicking team's drive.
+  drives.forEach((drive, driveIndex) => {
+    (drive.plays || []).forEach((play, playIndex) => {
+      if (!isKick(play) || isNoPlay(play) || !/ONSIDE|MUFF|FUMBL|RECOVER/i.test(`${play.type?.text || ""} ${play.text || ""}`)) return;
+      const key = play.id ? String(play.id) : null;
+      if (key && seenKickIds.has(key)) return;
+      if (key) seenKickIds.add(key);
+      const kickingTeam = resolveTeam(play.start?.team);
+      const possession = possessionAfterKick(drives, driveIndex, playIndex, resolveTeam);
+      if (isTouchdown(play) || (key && scoringPlays.some((candidate) => String(candidate.id) === key && isTouchdown(candidate)))) return;
+      // A routine receipt, failed onside kick, or receiving team's own muff
+      // recovery is not a kicking-team recovery award.
+      if (possession && possession.team.abbreviation !== kickingTeam && kickingTeam) return;
+      const opponent = teamInfo.find((team) => team.abbreviation !== kickingTeam)?.abbreviation;
+      const score = scoreByTeam.get(kickingTeam);
+      if (!score) {
+        for (const candidate of teamScores) candidate.issues.push("Kick recovery awaiting kicking-team confirmation");
+        return;
+      }
+      // Missing next possession cannot establish a recovery from an ordinary muff.
+      // Explicit end-of-half/game plays also have no offensive-possession bucket.
+      if (!possession) {
+        if (!NO_BUCKET_RESULTS.has(String(drive.result || "").toUpperCase())
+          && resolveTeam(play.end?.team) === kickingTeam) {
+          score.issues.push("Kick recovery awaiting offensive possession");
+        }
+        return;
+      }
+      if (key) recoveredKickIds.add(key);
+      const bucket = takeoverBucket(possession, opponent, kickingTeam, teamsByAbbr);
+      const component = {
+        kind: "special_teams_recovery", label: bucket ? `Special-teams recovery: ${bucket.label}` : "Kick recovery awaiting field position",
+        points: bucket?.points || 0, pending: !bucket, bucket: bucket?.name || null, takeover: bucket?.takeover || "",
+        gameId: event.id, playId: play.id, sequence: driveIndex + 1, period: play.period?.number,
+        clock: play.clock?.displayValue || "", description: play.text || "", source: "ESPN",
+      };
+      score.points += component.points;
+      score.components.push(component);
+      if (component.pending) score.issues.push(component.label);
+    });
+  });
 
   drives.forEach((drive, index) => {
-    const offense = drive.team?.abbreviation || teamsById.get(String(drive.team?.id || ""))?.abbreviation || "";
+    const offense = resolveTeam(drive.team);
     const defense = teamInfo.find((team) => team.abbreviation && team.abbreviation !== offense)?.abbreviation || "";
-    if (!offense || !defense) return;
+    if (!teamsByAbbr.has(offense) || !defense) {
+      for (const score of teamScores) score.issues.push("Drive awaiting team confirmation");
+      return;
+    }
+    if (!drive.result && !drive.shortDisplayResult && !drive.displayResult) return;
 
     const component = scoreDrive({
       drive,
-      nextDrive: drives[index + 1],
+      nextDrive: drives[index + 1] ? { ...drives[index + 1], team: { abbreviation: resolveTeam(drives[index + 1].team) } } : null,
+      scoringPlays,
+      recoveredKickIds,
+      resolveTeam,
       offense,
       defense,
       teamsByAbbr,
-      sequence: index + 1
+      sequence: index + 1,
     });
 
-    if (!component || component.points === 0) return;
+    if (!component) return;
     const defenseScore = scoreByTeam.get(defense);
     if (!defenseScore) return;
     defenseScore.points += component.points;
-    defenseScore.components.push(component);
+    defenseScore.components.push({ ...component, gameId: event.id });
+    if (component.pending) defenseScore.issues.push(component.label);
   });
 
+  // Special-team returns may be absent from the drive list or belong to the receiving team.
+  // Credit the scoring team once, using the play id shared by the two ESPN collections.
+  // Only a special-teams TD charges the opposing DST; an offense conceding a
+  // pick-six or defensive fumble-return TD does not charge its own DST.
+  for (const play of scoringPlays) {
+    if (!isReturnTouchdown(play)) continue;
+    const team = resolveTeam(play.team || play.end?.team);
+    const score = scoreByTeam.get(team);
+    if (!score) {
+      for (const candidate of teamScores) candidate.issues.push("Return touchdown awaiting scoring-team confirmation");
+      continue;
+    }
+    const playEvent = {
+      gameId: event.id, playId: play.id, sequence: Number(play.sequenceNumber || play.id) || 1000,
+      period: play.period?.number, clock: play.clock?.displayValue || "", description: play.text || "", source: "ESPN",
+    };
+    score.points += SCORING.dstTouchdown;
+    score.components.push({ ...playEvent, kind: "dst_touchdown", label: "D/ST touchdown", points: SCORING.dstTouchdown });
+    if (isSpecialTeamsPlay(play)) {
+      const concedingScore = scoreByTeam.get(score.opponent);
+      if (concedingScore) {
+        concedingScore.points += SCORING.touchdownAllowed;
+        concedingScore.components.push({ ...playEvent, kind: "special_teams_touchdown_allowed",
+          label: "Special-teams TD allowed", points: SCORING.touchdownAllowed });
+      }
+    }
+  }
+
   for (const score of teamScores) {
-    score.points = round(score.points);
+    // A structurally valid but incomplete feed must never be frozen as final.
+    if (status.type?.state !== "pre" && !summary?.drives) score.issues.push("Drive feed unavailable");
+    if (Array.isArray(summary?.scoringPlays)) {
+      const allowed = summary.scoringPlays.filter((play) => resolveTeam(play.team) === score.opponent);
+      const touchdowns = allowed.filter((play) => isTouchdown({ ...play, scoringPlay: true }) && !isReturnTouchdown({ ...play, scoringPlay: true })).length;
+      const fieldGoals = allowed.filter((play) => play.scoringType?.name === "field-goal" || play.type?.text === "Field Goal Good").length;
+      if (touchdowns !== score.components.filter((row) => row.kind === "touchdown_allowed").length
+        || fieldGoals !== score.components.filter((row) => row.kind === "field_goal_allowed").length) {
+        score.issues.push("Scoring plays and drive results are awaiting reconciliation");
+      }
+    }
+    // Always rebuild raw points from the current ESPN events first. This derived
+    // adjustment is never a starting balance for later plays or corrections.
+    score.rawPoints = round(score.points);
+    score.floorAdjustment = completed ? round(Math.max(0, FINAL_DST_FLOOR - score.rawPoints)) : 0;
+    score.points = round(score.rawPoints + score.floorAdjustment);
+    if (status.type?.state === "post" && !completed) {
+      score.issues.push("Game completion awaiting confirmation; final DST floor not applied");
+    }
+    if (score.floorAdjustment > 0) {
+      score.components.push({
+        kind: "final_score_floor", label: `Final DST floor (${FINAL_DST_FLOOR})`, points: score.floorAdjustment,
+        rawPoints: score.rawPoints, finalPoints: score.points, gameId: event.id,
+        description: `Raw DST score: ${score.rawPoints}. After the game ended, the ${FINAL_DST_FLOOR} floor adds ${score.floorAdjustment} points. Corrections recalculate the raw score before applying this floor.`,
+        source: "League scoring rule",
+      });
+    }
     score.oldAudit = buildOldDstAudit({
       team: score.team,
       opponent: score.opponent,
       teamInfo,
       drives,
       teamsByAbbr,
-      oldScoring
+      oldScoring,
     });
   }
 
@@ -127,13 +268,14 @@ function normalizeGame(event, summary, oldScoring) {
     shortName: event.shortName,
     name: event.name,
     date: event.date,
-    status: event.status?.type?.description || competition.status?.type?.description || "",
-    statusState: event.status?.type?.state || competition.status?.type?.state || "",
-    clock: event.status?.displayClock || competition.status?.displayClock || "",
-    period: event.status?.period || competition.status?.period || 0,
+    status: status.type?.description || "",
+    statusState: status.type?.state || "",
+    completed,
+    clock: status.displayClock || "",
+    period: status.period || 0,
     teams: teamInfo,
     activeDrive: activeDrive ? summarizeDrive(activeDrive, teamsById) : null,
-    teamScores
+    teamScores,
   };
 }
 
@@ -143,14 +285,7 @@ function buildOldDstAudit({ team, opponent, teamInfo, drives, teamsByAbbr, oldSc
   const components = [];
   const add = (kind, label, count, unit, description = "") => {
     if (!count || !unit) return;
-    components.push({
-      kind,
-      label,
-      count,
-      unit,
-      points: round(count * unit),
-      description
-    });
+    components.push({ kind, label, count, unit, points: round(count * unit), description });
   };
 
   const pointsAllowedPoints = pointsAllowedComponent(pointsAllowed, oldScoring);
@@ -160,7 +295,7 @@ function buildOldDstAudit({ team, opponent, teamInfo, drives, teamsByAbbr, oldSc
     count: 1,
     unit: pointsAllowedPoints,
     points: pointsAllowedPoints,
-    description: `${opponent} scoreboard points against ${team}.`
+    description: `${opponent} scoreboard points against ${team}.`,
   });
 
   const counts = {
@@ -170,7 +305,7 @@ function buildOldDstAudit({ team, opponent, teamInfo, drives, teamsByAbbr, oldSc
     fumbleRecoveries: 0,
     touchdowns: 0,
     safeties: 0,
-    blockedKicks: 0
+    blockedKicks: 0,
   };
 
   for (const drive of drives) {
@@ -202,7 +337,7 @@ function buildOldDstAudit({ team, opponent, teamInfo, drives, teamsByAbbr, oldSc
 
   return {
     estimatedPoints: round(components.reduce((sum, component) => sum + Number(component.points || 0), 0)),
-    components
+    components,
   };
 }
 
@@ -227,11 +362,12 @@ function recoveredByDefense(text, defense, offense) {
   return text.includes("RECOVERED BY") && !text.includes("RECOVERED BY TEAM");
 }
 
-function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence }) {
+function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence, scoringPlays, recoveredKickIds, resolveTeam }) {
   const result = String(drive.result || drive.shortDisplayResult || drive.displayResult || "").toUpperCase();
   const displayResult = drive.displayResult || drive.shortDisplayResult || drive.result || "Drive";
   const base = {
     sequence,
+    driveId: drive.id || null,
     offense,
     defense,
     result: displayResult,
@@ -240,124 +376,200 @@ function scoreDrive({ drive, nextDrive, offense, defense, teamsByAbbr, sequence 
     end: drive.end?.text || "",
     period: drive.end?.period?.number || drive.start?.period?.number || null,
     clock: drive.end?.clock?.displayValue || drive.start?.clock?.displayValue || "",
-    source: "ESPN"
+    source: "ESPN",
   };
-  const dstTouchdown = hasDstTouchdown(drive, defense, teamsByAbbr);
-
-  if (result.includes("TD") || result.includes("TOUCHDOWN")) {
-    return {
-      ...base,
-      kind: dstTouchdown ? "dst_touchdown" : "touchdown_allowed",
-      label: dstTouchdown ? "D/ST touchdown" : "TD allowed",
-      points: dstTouchdown ? SCORING.dstTouchdown : SCORING.touchdownAllowed
-    };
-  }
-
-  if (result === "FG" || result.includes("FIELD GOAL")) {
-    return {
-      ...base,
-      kind: "field_goal_allowed",
-      label: "FG allowed",
-      points: SCORING.fieldGoalAllowed
-    };
-  }
-
-  if (result.includes("SAFETY")) {
-    const bucket = takeoverBucket(nextDrive, offense, defense, teamsByAbbr);
-    return {
-      ...base,
-      kind: "safety",
-      label: bucket ? `Safety + ${bucket.label}` : "Safety",
-      points: round(SCORING.safety + (bucket?.points || 0)),
-      bucket: bucket?.name || null,
-      takeover: bucket?.takeover || ""
-    };
-  }
-
-  if (NO_BUCKET_RESULTS.has(result) || SCORING_RESULTS.has(result)) {
+  const drivePlays = (drive.plays || []).map((play) => scoringPlays.find((candidate) => candidate.id && candidate.id === play.id) || play);
+  const touchdown = drivePlays.find(isTouchdown);
+  const retainedPossessionTd = touchdown && !isSpecialTeamsPlay(touchdown)
+    && resolveTeam(touchdown.start?.team) === offense && resolveTeam(touchdown.end?.team) === offense;
+  const returnResult = /(?:INT|INTERCEPTION|FUMBLE|PUNT|KICKOFF|BLOCKED).*?(?:TD|TOUCHDOWN)/.test(result);
+  if ((returnResult && !retainedPossessionTd) || drivePlays.some(isReturnTouchdown)) {
+    // Return points are credited separately to the scoring team, never charged as an offensive TD.
+    if (!drivePlays.some(isReturnTouchdown)) return { ...base, kind: "pending", points: 0, pending: true, label: "Return touchdown awaiting play confirmation" };
     return null;
   }
-
-  const bucket = takeoverBucket(nextDrive, offense, defense, teamsByAbbr);
-  if (!bucket && !dstTouchdown) return null;
-
+  if (result === "TD" || result === "TOUCHDOWN" || retainedPossessionTd) {
+    if (touchdown && String((touchdown.team || touchdown.end?.team)?.id || "") === String(teamsByAbbr.get(defense)?.id)) return null;
+    return { ...base, kind: "touchdown_allowed", label: "TD allowed", points: SCORING.touchdownAllowed };
+  }
+  if (["FG", "FIELD GOAL", "FIELD GOAL GOOD"].includes(result)) {
+    return { ...base, kind: "field_goal_allowed", label: "FG allowed", points: SCORING.fieldGoalAllowed };
+  }
+  if (NO_BUCKET_RESULTS.has(result)) return null;
+  const safety = result.includes("SAFETY");
+  const terminalPlay = drivePlays.filter(isPossessionPlay).at(-1);
+  if (!safety && terminalPlay) {
+    // A kick recovery already has its own award; never also treat a receiving
+    // team's kick-only FUMBLE record as a second defensive possession.
+    if (recoveredKickIds.has(String(terminalPlay.id))) return null;
+    if (!isKick(terminalPlay) && /INTERCEPT|FUMBL/i.test(`${terminalPlay.type?.text || ""} ${terminalPlay.text || ""}`)) {
+      const startedBy = resolveTeam(terminalPlay.start?.team);
+      const endedBy = resolveTeam(terminalPlay.end?.team);
+      if (/INTERCEPT.*FUMBL|FUMBL.*FUMBL/i.test(`${terminalPlay.type?.text || ""} ${terminalPlay.text || ""}`)
+        && (!teamsByAbbr.has(startedBy) || !teamsByAbbr.has(endedBy))) {
+        return { ...base, kind: "pending", points: 0, pending: true, label: "Multiple-turnover play awaiting possession confirmation" };
+      }
+      // The original offense recovering during this same play retains possession.
+      // A duplicate, snapless drive assigned to the temporary possessor cannot
+      // create a bucket for either team. A later snapped play is scored normally.
+      if (startedBy && startedBy === endedBy) return null;
+      if (startedBy && startedBy !== offense) return null;
+    }
+  }
+  if (!safety && !TAKEOVER_RESULTS.test(result)) {
+    return { ...base, kind: "pending", label: `Unrecognized drive result: ${displayResult}`, points: 0, pending: true };
+  }
+  const endPeriod = drive.end?.period?.number;
+  const nextPeriod = nextDrive?.start?.period?.number;
+  // A halftime/overtime kickoff is not the takeover from the preceding possession.
+  const crossesBreak = (endPeriod <= 2 && nextPeriod >= 3) || (endPeriod <= 4 && nextPeriod >= 5);
+  const kickOnlyRecovery = nextDrive?.plays?.some((play) => recoveredKickIds.has(String(play.id)))
+    && !nextDrive.plays.some((play) => isPossessionPlay(play) && !isKickoff(play));
+  const bucket = crossesBreak || kickOnlyRecovery ? null : takeoverBucket(nextDrive, offense, defense, teamsByAbbr);
+  const pending = !crossesBreak && !kickOnlyRecovery && nextDrive?.team?.abbreviation === defense && !bucket;
+  if (!bucket && !safety && !pending) return null;
   return {
     ...base,
-    kind: dstTouchdown ? "dst_touchdown" : "takeover",
-    label: dstTouchdown && bucket ? `D/ST touchdown + ${bucket.label}` : dstTouchdown ? "D/ST touchdown" : bucket.label,
-    points: round((dstTouchdown ? SCORING.dstTouchdown : 0) + (bucket?.points || 0)),
+    kind: safety ? "safety" : pending ? "pending" : "takeover",
+    label: safety ? `Safety${bucket ? ` + ${bucket.label}` : ""}` : pending ? "Takeover awaiting field position" : bucket.label,
+    points: round((safety ? SCORING.safety : 0) + (bucket?.points || 0)),
+    pending,
     bucket: bucket?.name || null,
-    takeover: bucket?.takeover || ""
+    takeover: bucket?.takeover || "",
   };
+}
+
+function isNoPlay(play) {
+  return /\bNO PLAY\b|\bNULLIFIED\b/i.test(play.text || "");
+}
+
+function isKick(play) {
+  return /PUNT|KICKOFF|KICK RETURN|FREE KICK/i.test(play.type?.text || "")
+    || /\bpunts? \d+ yards|\bkicks (?:onside )?\d+ yards/i.test(play.text || "");
+}
+
+function isSpecialTeamsPlay(play) {
+  if (play.specialTeamsPhase) return true;
+  const text = String(play.text || "").split(/TWO.POINT|EXTRA POINT/i)[0];
+  return isKick({ ...play, text })
+    || /(?:BLOCKED|MISSED).*FIELD GOAL|FIELD GOAL.*(?:BLOCKED|MISSED|RETURN)/i.test(`${play.type?.text || ""} ${text}`);
+}
+
+function isPossessionPlay(play) {
+  return !isNoPlay(play) && !/TIMEOUT|TWO.MINUTE|END.*(?:PERIOD|QUARTER|HALF|GAME|REGULATION)|TWO.POINT|EXTRA POINT|CONVERSION|PENALTY/i.test(play.type?.text || "");
+}
+
+function isKickoff(play) {
+  return /KICKOFF|KICK RETURN|FREE KICK/i.test(play.type?.text || "") || /\bkicks (?:onside )?\d+ yards/i.test(play.text || "");
+}
+
+function possessionAfterKick(drives, driveIndex, playIndex, resolveTeam) {
+  const drive = drives[driveIndex];
+  const kick = drive.plays[playIndex];
+  const period = kick.period?.number || drive.end?.period?.number;
+  const beforeKick = drive.plays.slice(0, playIndex).some((play) => isPossessionPlay(play) && !isKickoff(play));
+  for (let index = driveIndex; index < drives.length; index += 1) {
+    const candidate = drives[index];
+    const plays = (candidate.plays || []).slice(index === driveIndex ? playIndex + 1 : 0)
+      .filter((play) => (!kick.id || play.id !== kick.id) && isPossessionPlay(play));
+    // Another kickoff starts a different possession sequence (or replaces a kick).
+    if (plays[0] && isKickoff(plays[0])) return null;
+    const nextPeriod = plays[0]?.period?.number || candidate.start?.period?.number;
+    if ((period <= 2 && nextPeriod >= 3) || (period <= 4 && nextPeriod >= 5)) return null;
+    if (plays.length) {
+      return {
+        team: { abbreviation: resolveTeam(plays[0].start?.team) || resolveTeam(candidate.team) },
+        // A leading kickoff's drive start incorporates the return and enforcement.
+        // A punt recovered within one drive uses the ensuing snap's starting spot.
+        start: { text: index === driveIndex && beforeKick ? plays[0].start?.possessionText : candidate.start?.text },
+      };
+    }
+    const result = candidate.result || candidate.shortDisplayResult || candidate.displayResult;
+    const duplicateOnly = (candidate.plays || []).some((play) => kick.id && play.id === kick.id);
+    if (!result && (index !== driveIndex || (isKickoff(kick) && !beforeKick))) {
+      return { team: { abbreviation: resolveTeam(candidate.team) }, start: candidate.start };
+    }
+    // Completed drives with no play detail still confirm a possession, except a
+    // duplicate kick-only record or the drive that ended with the kick itself.
+    if (index !== driveIndex && !duplicateOnly && result && candidate.offensivePlays !== 0) {
+      return { team: { abbreviation: resolveTeam(candidate.team) }, start: candidate.start };
+    }
+  }
+  return null;
+}
+
+function uniqueById(items) {
+  const result = new Map();
+  for (const [index, item] of items.entries()) {
+    const key = item.id ? String(item.id) : `anonymous-${index}`;
+    result.set(key, { ...result.get(key), ...item });
+  }
+  return [...result.values()];
+}
+
+function clockSeconds(clock) {
+  const [minutes, seconds] = String(clock || "0:00").split(":").map(Number);
+  return minutes * 60 + seconds;
+}
+
+function isTouchdown(play) {
+  if (!play?.scoringPlay) return false;
+  const touchdownText = String(play.text || "").split(/TWO.POINT|EXTRA POINT/i)[0];
+  if (isNoPlay({ text: touchdownText })) return false;
+  const type = String(play.type?.text || "").toUpperCase();
+  if (/EXTRA POINT|TWO.POINT|CONVERSION|SAFETY/.test(type)) return false;
+  if (play.scoringType?.name) return play.scoringType.name === "touchdown";
+  return /TOUCHDOWN/.test(type) || /TOUCHDOWN/.test(touchdownText);
+}
+
+function isReturnTouchdown(play) {
+  if (!isTouchdown(play)) return false;
+  if (isSpecialTeamsPlay(play)) return true;
+  if (play.start?.team?.id && String(play.start.team.id) === String(play.end?.team?.id)) return false;
+  const type = String(play.type?.text || "").toUpperCase();
+  if (/PASSING|RUSHING|OFFENSIVE/.test(type)) return false;
+  if (/INTERCEPTION|FUMBLE RETURN|FUMBLE RECOVERY \(OPPONENT\)|DEFENSIVE|PUNT|KICKOFF|KICK RETURN|BLOCKED/.test(type)) return true;
+  const text = String(play.text || "").toUpperCase().split(/TWO-POINT|EXTRA POINT/)[0];
+  return /INTERCEPTED|INTERCEPTION RETURN|KICKOFF RETURN|PUNT RETURN|BLOCKED.*TOUCHDOWN/.test(text);
 }
 
 function hasDstTouchdown(drive, defense, teamsByAbbr) {
   const defenseId = teamsByAbbr.get(defense)?.id;
-  if (!defenseId || !Array.isArray(drive.plays)) return false;
-  return drive.plays.some((play) => {
-    if (!play?.scoringPlay) return false;
-    if (String(play.end?.team?.id || "") === String(defenseId)) return true;
-    const text = `${play.type?.text || ""} ${play.text || ""}`.toUpperCase();
-    return /INTERCEPTION|FUMBLE|BLOCK|PUNT|KICKOFF/.test(text) && /TOUCHDOWN| TD\b/.test(text);
-  });
+  return (drive.plays || []).some((play) => isReturnTouchdown(play)
+    && String((play.team || play.end?.team)?.id || "") === String(defenseId));
 }
 
 function takeoverBucket(nextDrive, offense, defense, teamsByAbbr) {
   const nextOffense = nextDrive?.team?.abbreviation || "";
   if (!nextDrive || nextOffense !== defense) return null;
 
-  const nextStart = nextDrive.start || {};
-  const takeoverText = nextStart.text || "";
+  const takeoverText = nextDrive.start?.text || "";
   const y100ForOriginalOffense = yardline100(takeoverText, offense, defense);
   if (!Number.isFinite(y100ForOriginalOffense)) return null;
   const defenseTeam = teamsByAbbr.get(defense);
   const offenseTeam = teamsByAbbr.get(offense);
 
   if (y100ForOriginalOffense < 20) {
-    return {
-      name: "defense_lt_20",
-      label: `${defense} takes over inside own 20`,
-      points: SCORING.defenseLt20,
-      takeover: takeoverText,
-      color: defenseTeam?.color
-    };
+    return { name: "defense_lt_20", label: `${defense} takes over inside own 20`, points: SCORING.defenseLt20, takeover: takeoverText, color: defenseTeam?.color };
   }
   if (y100ForOriginalOffense <= 50) {
-    return {
-      name: "defense_20_to_50",
-      label: `${defense} takes over own 20-50`,
-      points: SCORING.defense20To50,
-      takeover: takeoverText,
-      color: defenseTeam?.color
-    };
+    return { name: "defense_20_to_50", label: `${defense} takes over own 20-50`, points: SCORING.defense20To50, takeover: takeoverText, color: defenseTeam?.color };
   }
   if (y100ForOriginalOffense <= 80) {
-    return {
-      name: "offense_49_to_20",
-      label: `${defense} takes over at ${offense} 49-20`,
-      points: SCORING.offense49To20,
-      takeover: takeoverText,
-      color: offenseTeam?.color
-    };
+    return { name: "offense_49_to_20", label: `${defense} takes over at ${offense} 49-20`, points: SCORING.offense49To20, takeover: takeoverText, color: offenseTeam?.color };
   }
-  return {
-    name: "offense_lt_20",
-    label: `${defense} takes over inside ${offense} 20`,
-    points: SCORING.offenseLt20,
-    takeover: takeoverText,
-    color: offenseTeam?.color
-  };
+  return { name: "offense_lt_20", label: `${defense} takes over inside ${offense} 20`, points: SCORING.offenseLt20, takeover: takeoverText, color: offenseTeam?.color };
 }
 
 function yardline100(text, offense, defense) {
-  const clean = String(text || "").trim();
+  const clean = String(text || "").trim().toUpperCase().replace(/\s+/g, " ");
   if (!clean) return null;
   if (clean === "50" || clean.startsWith("MID ")) return 50;
   const match = clean.match(/^([A-Z]{2,3})\s+(\d{1,2})$/);
   if (!match) return null;
   const [, side, yardText] = match;
   const yard = Number(yardText);
-  if (!Number.isFinite(yard)) return null;
+  if (!Number.isInteger(yard) || yard < 1 || yard > 50) return null;
   if (side === offense) return 100 - yard;
   if (side === defense) return yard;
   return null;
@@ -370,7 +582,7 @@ function summarizeDrive(drive, teamsById) {
     description: drive.description || "",
     result: drive.displayResult || drive.shortDisplayResult || drive.result || "",
     start: drive.start?.text || "",
-    end: drive.end?.text || ""
+    end: drive.end?.text || "",
   };
 }
 
