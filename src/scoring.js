@@ -9,7 +9,8 @@ const SCORING = {
   safety: 2,
 };
 
-export const SCORING_VERSION = "2026-09-09.4";
+export const SCORING_VERSION = "2026-09-09.5";
+export const FINAL_DST_FLOOR = -4;
 const TAKEOVER_RESULTS = /PUNT|INTERCEPT|^INT$|FUMBLE|DOWNS|MISSED|BLOCKED/;
 const NO_BUCKET_RESULTS = new Set(["END OF HALF", "END OF GAME", "END OF REGULATION"]);
 
@@ -29,6 +30,8 @@ export function scoreWeekFromEspn(events, summaries, oldScoring = {}) {
     for (const score of game.teamScores) {
       const current = byTeam.get(score.team) || emptyTeamScore(score.team);
       current.points += score.points;
+      current.rawPoints += score.rawPoints;
+      current.floorAdjustment += score.floorAdjustment;
       current.components.push(...score.components);
       current.issues.push(...(score.issues || []));
       current.oldComponents.push(...(score.oldAudit?.components || []));
@@ -37,6 +40,9 @@ export function scoreWeekFromEspn(events, summaries, oldScoring = {}) {
         gameId: game.id,
         opponent: score.opponent,
         status: game.status,
+        completed: game.completed,
+        rawPoints: score.rawPoints,
+        floorAdjustment: score.floorAdjustment,
         points: round(score.points),
       });
       byTeam.set(score.team, current);
@@ -45,8 +51,12 @@ export function scoreWeekFromEspn(events, summaries, oldScoring = {}) {
 
   for (const score of byTeam.values()) {
     score.points = round(score.points);
+    score.rawPoints = round(score.rawPoints);
+    score.floorAdjustment = round(score.floorAdjustment);
     score.oldEstimatedPoints = round(score.oldEstimatedPoints);
-    score.components.sort((a, b) => String(a.gameId).localeCompare(String(b.gameId)) || (a.period || 0) - (b.period || 0) || clockSeconds(b.clock) - clockSeconds(a.clock) || a.sequence - b.sequence);
+    score.components.sort((a, b) => String(a.gameId).localeCompare(String(b.gameId))
+      || Number(a.kind === "final_score_floor") - Number(b.kind === "final_score_floor")
+      || (a.period || 0) - (b.period || 0) || clockSeconds(b.clock) - clockSeconds(a.clock) || a.sequence - b.sequence);
   }
 
   return {
@@ -59,6 +69,8 @@ function emptyTeamScore(team) {
   return {
     team,
     points: 0,
+    rawPoints: 0,
+    floorAdjustment: 0,
     components: [],
     issues: [],
     oldComponents: [],
@@ -69,6 +81,12 @@ function emptyTeamScore(team) {
 
 function normalizeGame(event, summary, oldScoring) {
   const competition = event.competitions?.[0] || summary?.header?.competitions?.[0] || {};
+  const status = [event.status, competition.status, summary?.header?.competitions?.[0]?.status]
+    .find((candidate) => candidate?.type?.state) || {};
+  // A zero clock or END OF GAME drive is not enough: wait for the provider's
+  // completed, postgame status. A suspended/canceled game is not a final score.
+  const completed = status.type?.state === "post" && status.type?.completed === true
+    && (!status.type?.name || /^STATUS_FINAL(?:_|$)/.test(status.type.name));
   const competitors = competition.competitors || [];
   const teamInfo = competitors.map((competitor) => ({
     id: String(competitor.id || competitor.team?.id || ""),
@@ -209,7 +227,7 @@ function normalizeGame(event, summary, oldScoring) {
 
   for (const score of teamScores) {
     // A structurally valid but incomplete feed must never be frozen as final.
-    if (event.status?.type?.state !== "pre" && !summary?.drives) score.issues.push("Drive feed unavailable");
+    if (status.type?.state !== "pre" && !summary?.drives) score.issues.push("Drive feed unavailable");
     if (Array.isArray(summary?.scoringPlays)) {
       const allowed = summary.scoringPlays.filter((play) => resolveTeam(play.team) === score.opponent);
       const touchdowns = allowed.filter((play) => isTouchdown({ ...play, scoringPlay: true }) && !isReturnTouchdown({ ...play, scoringPlay: true })).length;
@@ -219,7 +237,22 @@ function normalizeGame(event, summary, oldScoring) {
         score.issues.push("Scoring plays and drive results are awaiting reconciliation");
       }
     }
-    score.points = round(score.points);
+    // Always rebuild raw points from the current ESPN events first. This derived
+    // adjustment is never a starting balance for later plays or corrections.
+    score.rawPoints = round(score.points);
+    score.floorAdjustment = completed ? round(Math.max(0, FINAL_DST_FLOOR - score.rawPoints)) : 0;
+    score.points = round(score.rawPoints + score.floorAdjustment);
+    if (status.type?.state === "post" && !completed) {
+      score.issues.push("Game completion awaiting confirmation; final DST floor not applied");
+    }
+    if (score.floorAdjustment > 0) {
+      score.components.push({
+        kind: "final_score_floor", label: `Final DST floor (${FINAL_DST_FLOOR})`, points: score.floorAdjustment,
+        rawPoints: score.rawPoints, finalPoints: score.points, gameId: event.id,
+        description: `Raw DST score: ${score.rawPoints}. After the game ended, the ${FINAL_DST_FLOOR} floor adds ${score.floorAdjustment} points. Corrections recalculate the raw score before applying this floor.`,
+        source: "League scoring rule",
+      });
+    }
     score.oldAudit = buildOldDstAudit({
       team: score.team,
       opponent: score.opponent,
@@ -235,10 +268,11 @@ function normalizeGame(event, summary, oldScoring) {
     shortName: event.shortName,
     name: event.name,
     date: event.date,
-    status: event.status?.type?.description || competition.status?.type?.description || "",
-    statusState: event.status?.type?.state || competition.status?.type?.state || "",
-    clock: event.status?.displayClock || competition.status?.displayClock || "",
-    period: event.status?.period || competition.status?.period || 0,
+    status: status.type?.description || "",
+    statusState: status.type?.state || "",
+    completed,
+    clock: status.displayClock || "",
+    period: status.period || 0,
     teams: teamInfo,
     activeDrive: activeDrive ? summarizeDrive(activeDrive, teamsById) : null,
     teamScores,
