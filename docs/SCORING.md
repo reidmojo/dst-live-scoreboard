@@ -1,14 +1,16 @@
 # Custom DST Scoring
 
-Reviewed September 9, 2026. This describes the scoring deployed at [r31d.wiki/fantasy_football/dst](https://r31d.wiki/fantasy_football/dst), scorer version `2026-09-09.3`, and edge cases still requiring architecture review.
+Reviewed September 9, 2026. This describes the scoring deployed at [r31d.wiki/fantasy_football/dst](https://r31d.wiki/fantasy_football/dst), scorer version `2026-09-09.4`, and edge cases still requiring architecture review.
 
 **Return-touchdown decision: +6 only, with no takeover bucket.** A return touchdown ends with points, not a new offensive possession for the scoring team. This replaces the earlier wording permitting a touchdown-plus-takeover combination. A safety is different: it can be followed by an actual possession after the free kick.
 
-**Possession decisions:** A scrimmage-play double turnover that ends with the original offense keeping the ball earns neither DST a takeover bucket. A kicking team's recovery of a punt or kickoff (including an onside kick) earns that team's DST the normal bucket for the resulting offensive possession. The receiving DST gets no recovery award or matching negative penalty for that lost kick. Routine kickoff receipts remain worth zero.
+**Special-teams touchdown decision: scoring DST +6; conceding DST -1.** This applies in both directions: a kickoff/punt return TD charges the kicking DST, and a kick fumble recovered for a TD by the kicking team charges the receiving DST. Recognized blocked/missed-field-goal return TDs and free-kick return TDs use the same rule. Neither team gets a takeover bucket on that touchdown. An interception or ordinary defensive fumble-return TD still leaves the conceding team's DST at **0 for that play**, because its offense conceded the score. These are custom league rules, not Sleeper's default settings.
+
+**Possession decisions:** A scrimmage-play double turnover that ends with the original offense keeping the ball earns neither DST a takeover bucket. A kicking team's non-TD recovery of a punt or kickoff (including an onside kick) earns that team's DST the normal bucket for the resulting offensive possession. The receiving DST gets no recovery award or matching negative possession penalty for that lost kick; the new -1 applies only when special teams concedes a touchdown. Routine kickoff receipts remain worth zero.
 
 ## Source and review status
 
-The live website runs in a separate Sites application. The matching hardened scorer is in [PR #1](https://github.com/reidmojo/dst-live-scoreboard/pull/1); its reviewed [source](https://github.com/reidmojo/dst-live-scoreboard/blob/f2a981e717c9d1c9f0b26c32aa544064d1c2a0d9/src/scoring.js) and [baseline tests](https://github.com/reidmojo/dst-live-scoreboard/blob/f2a981e717c9d1c9f0b26c32aa544064d1c2a0d9/tests/scoring.test.mjs) plus [possession-rule tests](https://github.com/reidmojo/dst-live-scoreboard/blob/f2a981e717c9d1c9f0b26c32aa544064d1c2a0d9/tests/possession.test.mjs) are pinned here. Until that PR is merged, the older runtime on main differs from production. This documentation update does not merge runtime changes.
+The live website runs in a separate Sites application. The matching hardened scorer is in [PR #1](https://github.com/reidmojo/dst-live-scoreboard/pull/1); its reviewed [source](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/src/scoring.js) and [baseline tests](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/tests/scoring.test.mjs) plus [possession-rule tests](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/tests/possession.test.mjs) and [special-teams TD tests](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/tests/special-teams-td.test.mjs) are pinned here. Until that PR is merged, the older runtime on main differs from production. This documentation update does not merge runtime changes.
 
 **Tested** below means a focused automated regression exists for the stated example. **Coded** means behavior is present in the reviewed source, but not necessarily covered by its own test. **Partial / not coded** identifies a limitation. A tested example does not establish coverage of every related play. Proposed decisions are not new scoring rules.
 
@@ -21,12 +23,13 @@ Custom DST points start at **0**. Add the following awards and deductions; there
 | Event or resulting possession | DST points |
 | --- | ---: |
 | Opponent offensive touchdown | -1 |
+| Touchdown conceded by special teams | -1 |
 | Opponent made field goal | -0.5 |
 | Take over at own 1–19 | +1 |
 | Take over at own 20 through midfield | +1.5 |
 | Take over at opponent 49–20 | +2.5 |
 | Take over at opponent 19–1 | +3.5 |
-| Defensive or special-teams return touchdown | +6 only |
+| Defensive or special-teams return touchdown scored | +6 only; no takeover bucket |
 | Safety | +2 plus applicable actual next-possession bucket |
 
 All field positions are from the perspective of the **team whose DST earns the award**. That team's offense receives the ball after the stop: “own 20” means its own 20-yard line, not the previous offense's 20. A “bucket” is the single field-position award for that possession.
@@ -34,6 +37,15 @@ All field positions are from the perspective of the **team whose DST earns the a
 The opponent 49–20 bucket is intentionally **+2.5**. Exactly own 20 belongs to +1.5; exactly opponent 20 belongs to +2.5; midfield belongs to +1.5. Each qualifying possession earns at most one bucket, not one per intermediate recovery. A special-teams recovery and the later outcome of the resulting offensive drive are separate events, even if ESPN places them in one drive record.
 
 There are **no separate custom awards** for sacks, interceptions, forced fumbles, recoveries, blocked kicks, yards allowed, or points-allowed tiers. Their effect comes through the drive outcome. Extra points and two-point conversions, including defensive conversion returns, currently add no custom DST points.
+
+| Touchdown example | Scoring team's DST | Conceding team's DST |
+| --- | ---: | ---: |
+| Kickoff or punt returned for TD | +6 | -1 |
+| Receiving team fumbles kick; kicking team recovers for TD | +6 | -1 |
+| Blocked/missed field goal returned for TD | +6 | -1 |
+| Interception or defensive fumble return against the offense | +6 | 0 |
+
+The special-teams deduction is a separate audit row labeled **Special-teams TD allowed**, with the same ESPN play ID and event time as the +6 award. Deduplication happens before both entries, so a play appearing in completed drives, the active drive, and the scoring summary still creates one credit and one debit. It does not also create an offensive-TD deduction. Kick evidence from either ESPN collection survives a shortened scoring-summary description such as “Fumble Return TD.”
 
 The matchup calculation replaces the **entire** starting Sleeper DST score, not just its points-allowed tier:
 
@@ -71,7 +83,9 @@ Examples:
 - A recovers its onside kick and starts at its own 45: **A DST +1.5; B DST 0** for the recovery.
 - A scores a FG, then recovers its onside kick at its own 45: **B DST -0.5** for the FG and **A DST +1.5** for the separate recovery.
 - A's interception return is fumbled back to the original offense during that same play: **0 takeover points for both DSTs**.
-- A recovers a punt for a special-teams TD: **A DST +6 only**; no offensive possession means no bucket on that TD.
+- A kicks to B and B returns it for a TD: **B DST +6; A DST -1**; no bucket for either team.
+- A kicks to B, B fumbles, and A recovers for a TD: **A DST +6; B DST -1**; no bucket for either team.
+- A recovers a punt for a special-teams TD: **A DST +6; B DST -1**; no offensive possession means no bucket on that TD.
 
 ## Implemented edge cases
 
@@ -83,20 +97,23 @@ Examples:
 | Failed fourth down, interception, or lost fumble | Uses the next possession's position when it belongs to the defending team. No separate turnover award. | Tested |
 | Original offense retains a scrimmage possession | No bucket when the next drive still belongs to the original offense; applies to retained fumbles represented that way. Kicking-team recoveries use the separate special-teams rule below. | Coded; double-turnover examples Tested |
 | Offensive TD or made FG followed by kickoff | Only -1 or -0.5 for the offensive score; ordinary kickoff receipt adds zero. A separate kicking-team recovery can earn its own bucket. | Coded; FG plus onside recovery Tested |
-| Confirmed return TD with a subsequent possession | Scoring team's DST gets +6; no takeover bucket is attached to that touchdown. The conceding team's DST gets no -1 deduction for that return TD, since the deduction applies to offensive TDs. This includes punt/kickoff returns. A separate later defensive stop can still score normally. | Coded; pick-six and kickoff-return awards Tested |
-| Return TD outside completed drives | Also reads the scoring-play collection and credits the scoring team. | Tested for kickoff return |
-| Same return TD in both collections | Deduplicates by play ID and awards it once. | Tested |
+| Confirmed return TD with a subsequent possession | Scoring DST gets +6, with no bucket for either team on the TD. A recognized special-teams TD also deducts -1 from the conceding DST. A pick-six/ordinary defensive fumble return gives the conceding DST 0. A separate later defensive stop can still score normally. | Tested for both return categories and subsequent possession |
+| Return TD outside completed drives | Also reads the scoring-play collection and credits the scoring team. A recognizable special-teams TD charges the other DST -1. | Tested for kickoff return |
+| Same return TD in both collections or duplicate active/completed drive | Deduplicates by play ID: one +6 and, for special-teams TDs, one -1. No duplicate offensive-TD deduction. | Tested |
 | Offense recovers its own fumble for a TD | With an offensive TD drive result and play type, -1 against the defending DST and no +6 to the scoring team's DST. | Tested |
 | Same-play double turnover, including duplicate temporary-possession drive | Confirmed scrimmage play starts and ends with the original offense: neither DST gets a takeover award. The eventual continuing drive can still score normally. | Tested; real ARI–LAC example plus synthetic duplicate-drive and fumble-chain cases |
 | New offense fumbles on its first snap | Separate possession; retain the previous interception/stop bucket and score the new turnover normally. | Tested |
 | Three possession changes ending with original defense | One normal bucket for the original defense's resulting offensive possession. No intermediate-recovery bonuses. | Tested |
 | Original offense scores after recovering a double turnover | A confirmed scrimmage TD with matching starting/ending team remains offensive: -1 to the opponent DST, no +6 DST bonus and no bucket. Incomplete or conflicting TD metadata remains a gap below. | Tested |
-| Kicking team recovers muffed punt or onside kick | Normal bucket for the kicking team's resulting offensive possession; zero recovery points and no mirror deduction for the receiving DST. | Tested at boundaries; real TEN punt and SEA onside fixtures |
+| Kicking team recovers muffed punt or onside kick without a TD | Normal bucket for the kicking team's resulting offensive possession; zero recovery points and no mirror deduction for the receiving DST. | Tested at boundaries; real TEN punt and SEA onside fixtures |
 | Kick recovery and ensuing offensive drive share one ESPN record | Recovery award and later offensive outcome are separate. A leading kickoff uses the resulting drive start; a punt followed by a snap within the same drive uses that snap's reported start. | Tested |
 | Routine kickoff / failed onside / receiver recovers own kickoff muff | No custom takeover points. Receiver recovers own punt muff: ordinary punt-stop bucket only. | Tested |
-| Kick recovery TD, including kicking-team fumble recovery | +6 to the scoring DST, no bucket and no offensive-TD deduction. | Tested for punt and kickoff |
+| Kick recovery TD, including kicking-team fumble recovery | +6 to the scoring DST and -1 to the other DST. No bucket and no additional offensive-TD deduction. | Tested for punt and kickoff in both scoring directions; real Cody Davis recovery fixture |
+| Blocked/missed-field-goal or free-kick return TD | Recognized special-teams TD: +6 / -1, no bucket. A field-goal return TD is not a made-FG deduction; a blocked conversion return remains zero under the conversion rule. | Tested for named types; real blocked-punt/conversion fixture also included |
+| Offensive TD from a fake-punt formation | An actual passing/rushing TD remains offensive: -1 to the opposing DST, no DST +6 bonus. Formation alone is not kick evidence. | Passing example Tested |
+| Generic fumble-return scoring summary with full kick play available | Preserves the kick-phase evidence by matching play ID, then applies +6 / -1 to the scoring/opposing teams. | Tested |
 | Safety followed by conceding team recovering free kick | Safety-scoring DST keeps +2 only; kicking/recovering DST gets its own resulting-possession bucket. A kick-only receiving drive cannot create an extra safety bucket. | Tested |
-| Recovery explicitly marked No Play / nullified | Excluded from special-teams recovery awards. Does not implement all replay or penalty precedence. | No Play Tested; nullified Coded |
+| Recovery/TD explicitly marked No Play / nullified | Excluded from recovery awards; a nullified kick TD gets neither +6 nor -1. Does not implement all replay or penalty precedence. | Tested |
 | Missing ownership on recognized multiple-turnover play | No guessed takeover bucket; raises a possession-confirmation issue. This guard depends on recognizable interception/fumble text and a non-scoring turnover event. | Tested |
 | Conversion interception mentioned in offensive-TD text | Does not reclassify the preceding offensive TD as defensive. | Tested |
 | Defensive two-point return | Zero custom points; excluded from six-point TDs. | Tested |
@@ -112,7 +129,7 @@ Examples:
 | Return result without a matching return play in that drive | Flags the drive as awaiting confirmation and does not assign a guessed bucket. A separately confirmed scoring play can still award +6 through the scoring-play collection. | Coded |
 | Confirmed return play with unresolved scoring team | No +6 award from that play until its scoring team can be resolved; raises an issue. | Coded |
 | Offensive TD/FG counts disagree between ESPN collections | Raises a reconciliation issue. This is an internal ESPN check, not independent official verification. | Mismatch warning Tested |
-| Return play no longer marked scoring after a correction | Recomputing drops its +6 if no collection still supplies it as scoring. There is no separate negative-six correction event. Conflicting feeds are a limitation below. | Single-collection case Tested |
+| Return play no longer marked scoring after a correction | Recomputing drops its +6 and any associated special-teams -1 if no collection still supplies it as scoring. There are no separate reversal ledger entries. Conflicting feeds are a limitation below. | Tested |
 
 An unresolved event may contribute **zero for now** while other confirmed components remain in the displayed total. That is different from a rule that definitively awards zero. Reported issues keep the result provisional; the gaps below describe missing data that may not raise an issue yet.
 
@@ -144,6 +161,7 @@ The first section below covers ordinary rules that use generic code but need mor
 | Case | Current gap | Follow-up / decision |
 | --- | --- | --- |
 | Incomplete or conflicting kick-recovery records | Implemented for identifiable kick plays with recovery evidence and a confirmed offensive possession. Does not reconstruct absent kick plays, resolve all contradictory team/drive fields, or infer a recovery from an unrecognized label. | Add broader real fixtures, including blocked kicks recovered by the kicking team, re-kicks, kick-return fumble chains, and unusual enforcement. |
+| Return TD with missing special-teams context | Uses kick/return types or explicit kick evidence from available records. If every record omits that context and supplies only a generic defensive-fumble-return label, it can still look like an ordinary defensive return: +6, with no special-teams -1. | Add ambiguous/fragmented-feed fixtures and phase-confirmation checks; do not infer the unit from player position alone. |
 | Fragmented or conflicting multiple-turnover records | Complete scrimmage plays with starting/ending teams are handled. Does not stitch different play IDs into a single return, infer every missing intermediate possession, or adjudicate conflicting TD/safety labels. | Add actual fragmented-feed/replay examples; surface conflicts before assigning a bucket or TD. |
 | Unusual overtime segmentation or later OT periods | Only general regulation-to-OT boundary exclusion; not a complete kickoff model for every format or absent period metadata. | Test regular-season and playoff overtime, including later period transitions. |
 | One-point safety / rare conversion events | No one-point-safety rule. An unusual drive result containing SAFETY could receive ordinary +2 treatment. Defensive two-point returns explicitly score zero. | Decide whether conversion events remain zero or get separate awards; add explicit recognition before changing policy. |
@@ -159,10 +177,12 @@ The first section below covers ordinary rules that use generic code but need mor
 
 ## Evidence and review priorities
 
-The hardened scorer's **74 automated tests** include synthetic cases and replay **323 completed drives with 2,897 play records across all 16 games in 2025 Week 1**. Moving the final completed drive to ESPN's active collection preserves totals. Hand-checked fixture examples: HOU **6.5**, CHI **12.5** custom points. The only Week 1 team-total change from this rule update is TEN **10.5 → 13.0**, adding its **+2.5** recovered punt at DEN 24; all other team totals remain unchanged.
+The hardened scorer's **95 automated tests** include synthetic cases and replay **323 completed drives with 2,897 play records across all 16 games in 2025 Week 1**. Moving the final completed drive to ESPN's active collection preserves totals. Hand-checked fixture examples: HOU **6.5**, CHI **12.5** custom points. The earlier possession-rule update changed TEN **10.5 → 13.0**, adding its **+2.5** recovered punt at DEN 24. The special-teams TD deduction adds no further changes to that Week 1 fixture; its specific TD cases are tested separately below.
 
 Real-event regression fixtures include [TEN at DEN, September 7, 2025](https://www.espn.com/nfl/playbyplay/_/gameId/401772832) (muffed punt recovered by TEN), [LAC at ARI, October 21, 2024](https://www.espn.com/nfl/playbyplay/_/gameId/401671699) (ARI interception fumbled back to ARI), and [GB at SEA, January 18, 2015](https://www.espn.com/nfl/playbyplay/_/gameId/400749519) (SEA onside recovery at midfield). The latter two fixtures preserve the relevant ESPN drive/play excerpts, not the entire games.
 
-The deployed application's broader **106-test** validation also covers lineup arithmetic, commissioner overrides, provider failures, and shared-cache recovery. These checks were completed for the September 9 release. Historical replay validates the cases it contains, not every rare or conflicting-feed scenario above.
+The special-teams TD fixtures preserve relevant ESPN drive/scoring records for [DeeJay Dallas's kickoff return, ARI at BUF, September 8, 2024](https://www.espn.com/nfl/playbyplay/_/gameId/401671617) (**ARI +6, BUF -1**), [Cody Davis's kickoff-fumble recovery, NE at DEN, December 24, 2023](https://www.espn.com/nfl/playbyplay/_/gameId/401547621) (**NE +6, DEN -1**), and [Grant Stuard's blocked-punt return, IND at TEN, December 3, 2023](https://www.espn.com/nfl/playbyplay/_/gameId/401547570) (**IND +6, TEN -1**, with the ensuing defensive conversion return worth zero). These are event awards, not full-game totals.
 
-Prioritize missing-drive/completeness checks, conflicting replay revisions, and post-freeze correction policy. Return TDs (**+6 only**), same-play retained possession (**no takeover bucket**), and kicking-team recoveries (**normal resulting-possession bucket**) are settled and implemented; the remaining gaps concern detection, unusual feed representations, and correction policy.
+The deployed application's broader **127-test** validation also covers lineup arithmetic, commissioner overrides, provider failures, and shared-cache recovery. These checks were completed for the September 9 release. Historical replay validates the cases it contains, not every rare or conflicting-feed scenario above.
+
+Prioritize missing-drive/completeness checks, conflicting replay revisions, and post-freeze correction policy. Return TDs (**+6, no bucket**), special-teams TDs conceded (**-1**), same-play retained possession (**no takeover bucket**), and non-TD kicking-team recoveries (**normal resulting-possession bucket**) are settled and implemented; the remaining gaps concern detection, unusual feed representations, and correction policy.
