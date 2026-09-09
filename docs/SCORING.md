@@ -1,6 +1,6 @@
 # Custom DST Scoring
 
-Reviewed September 9, 2026. This describes the scoring deployed at [r31d.wiki/fantasy_football/dst](https://r31d.wiki/fantasy_football/dst), scorer version `2026-09-09.4`, and edge cases still requiring architecture review.
+Reviewed September 9, 2026. This describes the scoring deployed at [r31d.wiki/fantasy_football/dst](https://r31d.wiki/fantasy_football/dst), scorer version `2026-09-09.5`, and edge cases still requiring architecture review.
 
 **Return-touchdown decision: +6 only, with no takeover bucket.** A return touchdown ends with points, not a new offensive possession for the scoring team. This replaces the earlier wording permitting a touchdown-plus-takeover combination. A safety is different: it can be followed by an actual possession after the free kick.
 
@@ -8,9 +8,11 @@ Reviewed September 9, 2026. This describes the scoring deployed at [r31d.wiki/fa
 
 **Possession decisions:** A scrimmage-play double turnover that ends with the original offense keeping the ball earns neither DST a takeover bucket. A kicking team's non-TD recovery of a punt or kickoff (including an onside kick) earns that team's DST the normal bucket for the resulting offensive possession. The receiving DST gets no recovery award or matching negative possession penalty for that lost kick; the new -1 applies only when special teams concedes a touchdown. Routine kickoff receipts remain worth zero.
 
+**Final-score floor: -4, only after the NFL game ends.** Live scoring is never clamped. Corrections recalculate the full raw score, then reapply the floor; they never start from the previously floored result. A game being final does not mean its correction window has closed.
+
 ## Source and review status
 
-The live website runs in a separate Sites application. The matching hardened scorer is in [PR #1](https://github.com/reidmojo/dst-live-scoreboard/pull/1); its reviewed [source](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/src/scoring.js) and [baseline tests](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/tests/scoring.test.mjs) plus [possession-rule tests](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/tests/possession.test.mjs) and [special-teams TD tests](https://github.com/reidmojo/dst-live-scoreboard/blob/9bed23580f6001ae07a99da7c42658e6b71b05fa/tests/special-teams-td.test.mjs) are pinned here. Until that PR is merged, the older runtime on main differs from production. This documentation update does not merge runtime changes.
+The live website runs in a separate Sites application. The matching hardened scorer is in [PR #1](https://github.com/reidmojo/dst-live-scoreboard/pull/1); its reviewed [source](https://github.com/reidmojo/dst-live-scoreboard/blob/50b6c58e67aaa06d3b487fb38743b7c3bbb8b91a/src/scoring.js) and [baseline tests](https://github.com/reidmojo/dst-live-scoreboard/blob/50b6c58e67aaa06d3b487fb38743b7c3bbb8b91a/tests/scoring.test.mjs) plus [possession-rule tests](https://github.com/reidmojo/dst-live-scoreboard/blob/50b6c58e67aaa06d3b487fb38743b7c3bbb8b91a/tests/possession.test.mjs) and [special-teams TD tests](https://github.com/reidmojo/dst-live-scoreboard/blob/50b6c58e67aaa06d3b487fb38743b7c3bbb8b91a/tests/special-teams-td.test.mjs) and [final-floor tests](https://github.com/reidmojo/dst-live-scoreboard/blob/50b6c58e67aaa06d3b487fb38743b7c3bbb8b91a/tests/floor.test.mjs) are pinned here. Until that PR is merged, the older runtime on main differs from production. This documentation update does not merge runtime changes.
 
 **Tested** below means a focused automated regression exists for the stated example. **Coded** means behavior is present in the reviewed source, but not necessarily covered by its own test. **Partial / not coded** identifies a limitation. A tested example does not establish coverage of every related play. Proposed decisions are not new scoring rules.
 
@@ -18,7 +20,7 @@ The live website runs in a separate Sites application. The matching hardened sco
 
 ## Scoring rules
 
-Custom DST points start at **0**. Add the following awards and deductions; there is no starting shutout bonus or minimum-score floor.
+Raw custom DST points start at **0**, with no starting shutout bonus. Add the following awards and deductions without a running floor. Once that DST's NFL game is confirmed final, its displayed/contributing game score is **max(raw score, -4)**. The event values below remain unchanged by the final-score floor.
 
 | Event or resulting possession | DST points |
 | --- | ---: |
@@ -53,7 +55,36 @@ The matchup calculation replaces the **entire** starting Sleeper DST score, not 
 custom team total = Sleeper team total - starting Sleeper DST points + custom DST points
 ```
 
-Bench defenses do not contribute. Production preserves Sleeper's commissioner-adjusted team total when supplied, including zero. Totals are rounded to two decimal places.
+Here, custom DST points means the raw score while its game is live, and the floored score once its game is final. Bench defenses do not contribute. Production preserves Sleeper's commissioner-adjusted team total when supplied, including zero. Totals are rounded to two decimal places. The -4 floor applies to the custom DST, not to Sleeper's old DST score or the fantasy team's total.
+
+## Final-game floor and corrections
+
+The floor applies separately to each NFL team/game; a normal fantasy week has one game per DST. It applies as soon as that game is confirmed final, even while other NFL games are still live. There is no running minimum during the game, including overtime. A zero clock or an `END OF GAME` drive label alone is insufficient.
+
+The scorer requires ESPN's status to be `post` with `completed: true`; when a status name is supplied, it must be `STATUS_FINAL` or a final-status variant. It uses the event status first, then competition/summary status when the event has no state. The first available status takes precedence, including when the collections disagree: an explicit live event status wins over a final summary, and an explicit final event status wins over a live summary. The selected status must satisfy all final-status checks; an unconfirmed postgame status raises a warning and prevents a new finalized snapshot.
+
+For every refresh before the existing correction freeze:
+
+1. Recompute the raw score from the available ESPN drive/play events.
+2. If the game is not confirmed final, display that raw score unchanged.
+3. If it is final, calculate `floor adjustment = max(0, -4 - raw score)` and `displayed score = raw score + floor adjustment`.
+4. Preserve the raw score and original event components. Show a separate **Final DST floor (-4)** audit row only when the adjustment is positive.
+
+| Example | Raw score | Displayed DST score | Floor adjustment |
+| --- | ---: | ---: | ---: |
+| Live game falls to -6 | -6 | -6 | 0 |
+| That live game then earns +1.5 | -4.5 | -4.5 | 0 |
+| Game ends at raw -4.5 | -4.5 | -4 | +0.5 |
+| Game ends at raw -6 | -6 | -4 | +2 |
+| +0.5 correction to that raw -6 result | -5.5 | -4 | +1.5 |
+| Correction raises raw score above the floor | -3.5 | -3.5 | 0 |
+| Final raw score is exactly -4 | -4 | -4 | 0 |
+
+Thus a +0.5 correction to raw -6 does **not** produce -3.5 by adding to the displayed -4. Corrections can shrink, remove, restore, or increase the floor adjustment. Reopening a game before the correction freeze removes the adjustment and resumes raw scoring. Recomputing the same data never adds a second floor adjustment.
+
+The API and persisted dashboard JSON keep `rawPoints`, `floorAdjustment`, and displayed `points` for DST/game scores. Team audit data also keeps `rawTotal`, `floorAdjustment`, and `total`; the lineup and matchup use the displayed score. The floor row is identified as a league rule, not an ESPN play. Event rows alone sum to the raw score; event rows plus the floor row sum to the displayed score.
+
+This does not change the Wednesday correction cutoff or automatically reopen already frozen results. A new scoring version invalidates older-version snapshots, which are recomputed with the floor. Provider warnings remain visible even when a floor is applied; flooring does not certify incomplete event data as correct.
 
 ## Possession and field-position model
 
@@ -130,6 +161,12 @@ Examples:
 | Confirmed return play with unresolved scoring team | No +6 award from that play until its scoring team can be resolved; raises an issue. | Coded |
 | Offensive TD/FG counts disagree between ESPN collections | Raises a reconciliation issue. This is an internal ESPN check, not independent official verification. | Mismatch warning Tested |
 | Return play no longer marked scoring after a correction | Recomputing drops its +6 and any associated special-teams -1 if no collection still supplies it as scoring. There are no separate reversal ledger entries. Conflicting feeds are a limitation below. | Tested |
+| Live raw score below -4, including Q4 at 0:00 or overtime | Remains below -4. Later positive points are added to the raw total, never to -4. | Tested |
+| Confirmed final raw score below -4 | Display/contribute -4 and preserve the raw score with one positive floor-adjustment row. Does not wait for other games or the correction cutoff. | Tested; real MIA raw -5 / displayed -4 fixture |
+| Final raw score at/above -4 | No adjustment row and no change to the score. | Tested at -4, -3.5, zero, and a positive score |
+| Postponed, suspended, canceled, or unconfirmed completion | Does not activate the floor. An unconfirmed `post` status raises a completion warning. | Tested |
+| Correction while final, or game reopened before freeze | Recompute raw first; then shrink/remove/restore the adjustment, or remove it entirely while live. No points are added to a previously floored balance. | Tested in scorer and production dashboard flow |
+| Persisted/reloaded floored result | Keeps raw and displayed values plus one adjustment. Does not compound the adjustment on reload. | Tested in production dashboard/snapshot flow |
 
 An unresolved event may contribute **zero for now** while other confirmed components remain in the displayed total. That is different from a rule that definitively awards zero. Reported issues keep the result provisional; the gaps below describe missing data that may not raise an issue yet.
 
@@ -141,8 +178,8 @@ These safeguards belong to the deployed Sites application; the legacy Node appli
 - **Starter scores:** Falls back from `starters_points` to matching `players_points`; missing values in both are errors. Empty slots retain their positions. Weekly scores never use season-cumulative roster points.
 - **Provider trouble:** Bounded timeouts, transient retries, validation, and cached fallback. Stale sources retain timestamps and show warnings. If a required source fails with no cached fallback, loading fails. Optional stat breakdowns can be unavailable while core totals remain visible. Missing active/completed-game summaries are rejected. Reported unresolved issues prevent a new finalized snapshot; undetected incomplete data remains a gap below.
 - **Different receipt times:** ESPN and Sleeper are asynchronous; a dashboard is not an atomic snapshot of both providers. Fresh receipt timestamps do not prove every event has reached both sources.
-- **Corrections:** Recalculates from available summaries until frozen. When all games are completed, the cutoff is the next Wednesday at **00:00 America/New_York (the start of Wednesday)** after the latest scheduled kickoff date in that week. A Wednesday kickoff moves the cutoff to the following Wednesday. This is an application policy, not a guarantee that the providers have finished every correction.
-- **Frozen results:** The first healthy request after the cutoff can persist a finalized database snapshot. No scheduled job captures scores at exactly midnight. Unhealthy data and failed snapshot writes remain provisional.
+- **Corrections:** Recalculates raw scores from available summaries until frozen, then derives any final-game floor adjustment. The floor can apply immediately at a game's final status while corrections remain open. When all games are completed, the cutoff is the next Wednesday at **00:00 America/New_York (the start of Wednesday)** after the latest scheduled kickoff date in that week. A Wednesday kickoff moves the cutoff to the following Wednesday. This is an application policy, not a guarantee that the providers have finished every correction.
+- **Frozen results:** The first healthy request after the cutoff can persist a finalized database snapshot containing raw scores, floor adjustments, and displayed totals. No scheduled job captures scores at exactly midnight. Unhealthy data and failed snapshot writes remain provisional.
 - **Scoring versions:** Different-version snapshots are ignored and recomputed. Same-version frozen snapshots are reused without automatically incorporating later provider corrections.
 
 ## Partial, unimplemented, or unverified cases for review
@@ -177,12 +214,12 @@ The first section below covers ordinary rules that use generic code but need mor
 
 ## Evidence and review priorities
 
-The hardened scorer's **95 automated tests** include synthetic cases and replay **323 completed drives with 2,897 play records across all 16 games in 2025 Week 1**. Moving the final completed drive to ESPN's active collection preserves totals. Hand-checked fixture examples: HOU **6.5**, CHI **12.5** custom points. The earlier possession-rule update changed TEN **10.5 → 13.0**, adding its **+2.5** recovered punt at DEN 24. The special-teams TD deduction adds no further changes to that Week 1 fixture; its specific TD cases are tested separately below.
+The hardened scorer's **118 automated tests** include synthetic cases and replay **323 completed drives with 2,897 play records across all 16 games in 2025 Week 1**. Moving the final completed drive to ESPN's active collection preserves totals. Hand-checked fixture examples: HOU **6.5**, CHI **12.5** custom points. The earlier possession-rule update changed TEN **10.5 → 13.0**, adding its **+2.5** recovered punt at DEN 24. The special-teams TD deduction adds no further changes to that Week 1 fixture; its specific TD cases are tested separately below. The final-score floor changes only MIA's displayed Week 1 score, from raw **-5** to displayed **-4**, with a **+1** league adjustment; its raw event score remains -5.
 
 Real-event regression fixtures include [TEN at DEN, September 7, 2025](https://www.espn.com/nfl/playbyplay/_/gameId/401772832) (muffed punt recovered by TEN), [LAC at ARI, October 21, 2024](https://www.espn.com/nfl/playbyplay/_/gameId/401671699) (ARI interception fumbled back to ARI), and [GB at SEA, January 18, 2015](https://www.espn.com/nfl/playbyplay/_/gameId/400749519) (SEA onside recovery at midfield). The latter two fixtures preserve the relevant ESPN drive/play excerpts, not the entire games.
 
 The special-teams TD fixtures preserve relevant ESPN drive/scoring records for [DeeJay Dallas's kickoff return, ARI at BUF, September 8, 2024](https://www.espn.com/nfl/playbyplay/_/gameId/401671617) (**ARI +6, BUF -1**), [Cody Davis's kickoff-fumble recovery, NE at DEN, December 24, 2023](https://www.espn.com/nfl/playbyplay/_/gameId/401547621) (**NE +6, DEN -1**), and [Grant Stuard's blocked-punt return, IND at TEN, December 3, 2023](https://www.espn.com/nfl/playbyplay/_/gameId/401547570) (**IND +6, TEN -1**, with the ensuing defensive conversion return worth zero). These are event awards, not full-game totals.
 
-The deployed application's broader **127-test** validation also covers lineup arithmetic, commissioner overrides, provider failures, and shared-cache recovery. These checks were completed for the September 9 release. Historical replay validates the cases it contains, not every rare or conflicting-feed scenario above.
+The deployed application's broader **151-test** validation also covers lineup arithmetic, commissioner overrides, provider failures, shared-cache recovery, and a live → final → corrected → saved/reloaded floor scenario. That scenario verifies corrections both below and across -4 and that raw/floor values survive persistence without compounding. These checks were completed for the September 9 release. Historical replay validates the cases it contains, not every rare or conflicting-feed scenario above.
 
-Prioritize missing-drive/completeness checks, conflicting replay revisions, and post-freeze correction policy. Return TDs (**+6, no bucket**), special-teams TDs conceded (**-1**), same-play retained possession (**no takeover bucket**), and non-TD kicking-team recoveries (**normal resulting-possession bucket**) are settled and implemented; the remaining gaps concern detection, unusual feed representations, and correction policy.
+Prioritize missing-drive/completeness checks, conflicting replay revisions, and post-freeze correction policy. Return TDs (**+6, no bucket**), special-teams TDs conceded (**-1**), same-play retained possession (**no takeover bucket**), non-TD kicking-team recoveries (**normal resulting-possession bucket**), and the **-4 floor after each game's final status** are settled and implemented; the remaining gaps concern detection, unusual feed representations, and correction policy.
