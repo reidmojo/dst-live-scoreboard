@@ -57,6 +57,35 @@ custom team total = Sleeper team total - starting Sleeper DST points + custom DS
 
 Here, custom DST points means the raw score while its game is live, and the floored score once its game is final. Bench defenses do not contribute. Production preserves Sleeper's commissioner-adjusted team total when supplied, including zero. Totals are rounded to two decimal places. The -4 floor applies to the custom DST, not to Sleeper's old DST score or the fantasy team's total.
 
+### Sleeper default comparison
+
+The commissioner has zeroed the league's DST scoring rates for manual entry. The website's **Default** comparison now reconstructs **Sleeper's default DST score** from Sleeper's raw weekly team-defense stats. Its full audit is labeled **Sleeper default**. League settings, manually recorded DST points, and precomputed `pts_std`/PPR values do not determine this comparison.
+
+| Sleeper default category | Points |
+| --- | ---: |
+| Sack | +1 |
+| Interception / fumble recovery | +2 each |
+| Forced fumble | +1 |
+| Safety / blocked kick | +2 each |
+| Defensive TD / special-teams TD | +6 each |
+| Special-teams forced fumble / recovery | +1 each |
+| Points allowed: 0 / 1–6 / 7–13 / 14–20 / 21–27 / 28–34 / 35+ | +10 / +7 / +4 / +1 / 0 / -1 / -4 |
+
+These are the enabled NFL defaults verified in [Sleeper's app configuration](https://sleepercdn.com/js/bundle-5f75c239373ac7fd0d09dd40562a58f0.js?vsn=d) on September 9, 2026. The [general DST guide](https://sleeper.com/blog/what-is-dst-in-fantasy-football/) omits some enabled preset categories. Yards, tackles, return yards, three-and-outs, fourth-down stops, and defensive two-point returns have no default points. Individual-player special-teams fields are excluded. Enabled defense fields contribute independently: when Sleeper reports a recovery in both `fum_rec` and `def_st_fum_rec`, their +2 and +1 rates both apply, matching the preset.
+
+Points allowed uses [Sleeper's own D/ST definition](https://support.sleeper.com/en/articles/4126495-how-are-points-allowed-calculated), not the opponent's scoreboard total. Scheduled games/byes display zero; a live shutout earns +10 only once its stats confirm zero points allowed. Missing event counts are zero in the sparse feed, but missing/invalid points-allowed stats or conflicting tiers make the comparison **unavailable**, not a fabricated shutout or the recorded zero. A valid raw points-allowed value selects one tier; a supplied tier flag must agree. Multiple started games for one team in one week require per-game stats and are currently marked unavailable.
+
+The existing custom-total formula above still subtracts the **actual recorded** starting DST score. Separately:
+
+```text
+default comparison total = Sleeper team total - recorded starting DST score + reconstructed default DST
+comparison impact = custom DST - reconstructed default DST
+```
+
+Thus zeroed scoring settings do not erase the comparison, and a later change to the recorded DST player score is removed once before either replacement. A team-total override that already embeds custom DST while leaving the DST player's score at zero remains an undetectable manual-adjustment case. Corrections rebuild the default comparison from stats without forcing it to match the commissioner's recorded score. Missing comparison data does not alter the custom score but prevents a new finalized snapshot.
+
+The production comparison version is `sleeper-default-2026-09-09.1`; it invalidates older live caches and frozen comparisons independently of the unchanged custom scorer `2026-09-09.5`. The Sites application has 181 passing tests, including the captured preset, every tier boundary, all 32 defenses from 2025 Week 1, zeroed league rates, recorded-score adjustments, and missing-stat/finalization behavior. Example default totals: HOU 7, CHI 11, BAL -2, MIA 0, TEN 10, DEN 16. This comparison implementation belongs to the separate production application, not the legacy Node runtime in this repository.
+
 ## Final-game floor and corrections
 
 The floor applies separately to each NFL team/game; a normal fantasy week has one game per DST. It applies as soon as that game is confirmed final, even while other NFL games are still live. There is no running minimum during the game, including overtime. A zero clock or an `END OF GAME` drive label alone is insufficient.
@@ -174,13 +203,13 @@ An unresolved event may contribute **zero for now** while other confirmed compon
 
 These safeguards belong to the deployed Sites application; the legacy Node application does not have all of them.
 
-- **Sleeper comparison:** Old-DST audit rows use Sleeper weekly stats × league settings. A reconciliation row makes their sum equal the official matchup DST total when stats arrive separately. Missing stats do not invent individual events.
+- **Sleeper comparison:** Uses the fixed default reconstruction above. Audit components sum to that comparison without reconciliation to the recorded DST score. Missing required stats show an unavailable comparison; custom totals remain visible.
 - **Starter scores:** Falls back from `starters_points` to matching `players_points`; missing values in both are errors. Empty slots retain their positions. Weekly scores never use season-cumulative roster points.
 - **Provider trouble:** Bounded timeouts, transient retries, validation, and cached fallback. Stale sources retain timestamps and show warnings. If a required source fails with no cached fallback, loading fails. Optional stat breakdowns can be unavailable while core totals remain visible. Missing active/completed-game summaries are rejected. Reported unresolved issues prevent a new finalized snapshot; undetected incomplete data remains a gap below.
 - **Different receipt times:** ESPN and Sleeper are asynchronous; a dashboard is not an atomic snapshot of both providers. Fresh receipt timestamps do not prove every event has reached both sources.
 - **Corrections:** Recalculates raw scores from available summaries until frozen, then derives any final-game floor adjustment. The floor can apply immediately at a game's final status while corrections remain open. When all games are completed, the cutoff is the next Wednesday at **00:00 America/New_York (the start of Wednesday)** after the latest scheduled kickoff date in that week. A Wednesday kickoff moves the cutoff to the following Wednesday. This is an application policy, not a guarantee that the providers have finished every correction.
 - **Frozen results:** The first healthy request after the cutoff can persist a finalized database snapshot containing raw scores, floor adjustments, and displayed totals. No scheduled job captures scores at exactly midnight. Unhealthy data and failed snapshot writes remain provisional.
-- **Scoring versions:** Different-version snapshots are ignored and recomputed. Same-version frozen snapshots are reused without automatically incorporating later provider corrections.
+- **Scoring versions:** Snapshots with a different custom-scorer or default-comparison version are ignored and recomputed. Same-version frozen snapshots are reused without automatically incorporating later provider corrections.
 
 ## Partial, unimplemented, or unverified cases for review
 
