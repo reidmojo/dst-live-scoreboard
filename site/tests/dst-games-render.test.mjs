@@ -147,6 +147,12 @@ test("portrait team totals face the center and player names share a mirrored row
   assert.match(css, /\.playerScore, \.playerRight \.playerScore {[^}]*grid-column: 2; grid-row: 1;[^}]*width: max-content;[^}]*justify-self: end;/);
   assert.match(css, /\.playerRight \.playerScore { grid-column: 1; justify-self: start; }/);
   assert.match(css, /\.playerMain strong {[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/);
+  assert.match(css, /--dst-player-name-size: 1\.0625rem;/);
+  for (const selector of [".playerMain strong", ".nflPlayerIdentity > strong"]) {
+    const nameRules = [...css.matchAll(new RegExp(`${selector.replaceAll(".", "\\.")} \\{([^}]+)\\}`, "g"))];
+    assert.equal(nameRules.length, 1, "player names must not shrink at mobile breakpoints");
+    assert.match(nameRules[0][1], /font-size: var\(--dst-player-name-size\);/);
+  }
   const portrait = css.slice(css.indexOf("@media (max-width: 680px) and (orientation: portrait)"));
   assert.match(portrait, /^@media \(max-width: 680px\) and \(orientation: portrait\) \{\s*\.scoreBlock \{ justify-self: end; \}\s*\.right \.scoreBlock \{ justify-self: start; \}\s*\}/);
   assert.match(css, /\.gameCardTeam\[data-side="home"\] {[^}]*grid-template-areas: "score identity logo"; text-align: right/);

@@ -9,6 +9,7 @@
   --dst-gold: #f4c95d;
   --dst-red: #ff6b6b;
   --dst-blue: #59a7ff;
+  --dst-player-name-size: 1.0625rem;
   min-width: 0;
   min-height: 100vh;
   overflow-x: clip;
@@ -260,7 +261,7 @@
 .nflPlayerDetails > summary { display: flex; align-items: start; gap: 10px; min-height: 44px; }
 .nflPlayer[data-side="home"] .nflPlayerDetails > summary { flex-direction: row-reverse; }
 .nflPlayerIdentity { display: grid; flex: 1; min-width: 0; gap: 4px; }
-.nflPlayerIdentity > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 17px; font-weight: 600; line-height: 1.2; }
+.nflPlayerIdentity > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--dst-player-name-size); font-weight: 600; line-height: 1.2; }
 .nflOwner { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dst-muted); font-size: 12px; line-height: 1.4; }
 .nflOwner[data-mine="true"] { color: var(--dst-green); }
 .nflFantasyScore { display: grid; flex: 0 0 auto; justify-items: center; gap: 4px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -302,7 +303,6 @@
   .gamePlayerPair { gap: 16px; }
   .nflPlayer { padding: 7px 6px 12px; }
   .nflPlayerDetails > summary { gap: 5px; }
-  .nflPlayerIdentity > strong { font-size: 14px; line-height: 18px; }
   .nflFantasyScore strong { font-size: 18px; line-height: 18px; }
   .nflFantasyScore small { font-size: 11px; }
   .nflOwner { font-size: 12px; }
@@ -813,8 +813,8 @@ button.playerCard.playerRight { text-align: right; }
 
 .playerMain strong {
   overflow: hidden;
-  font-size: 16px;
-  line-height: 1.12;
+  font-size: var(--dst-player-name-size);
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1136,7 +1136,6 @@ button.playerCard.playerRight { text-align: right; }
   .playerAvatar, .defenseAvatar { display: none; }
   .playerMain { display: block; grid-column: 1; grid-row: 1; }
   .playerRight .playerMain { grid-column: 2; }
-  .playerMain strong { font-size: 14px; line-height: 1.2; }
   .playerMain > span { margin-top: 3px; }
   .playerMain span { font-size: 12px; line-height: 1.2; }
   .playerMain .playerPosition { display: inline; }
