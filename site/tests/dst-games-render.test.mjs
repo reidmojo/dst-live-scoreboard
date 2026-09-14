@@ -8,17 +8,19 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import * as presentation from "../lib/dst/presentation.js";
 import * as liveEstimates from "../lib/dst/live-estimates.js";
+import * as health from "../lib/dst/health.js";
 
 const require = createRequire(import.meta.url);
+const cssModule = { __esModule: true, default: new Proxy({}, { get: (_, key) => String(key) }) };
 const source = await readFile(new URL("../app/fantasy_football/dst/games-view.tsx", import.meta.url), "utf8");
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const exports = {};
-runInNewContext(compiled, { exports, require: name => name.endsWith(".css") ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith("presentation.js") ? presentation : name.endsWith("live-estimates.js") ? liveEstimates : require(name), Intl, Date, Set, Map });
+runInNewContext(compiled, { exports, require: name => name.endsWith(".css") ? cssModule : name.endsWith("presentation.js") ? presentation : name.endsWith("live-estimates.js") ? liveEstimates : require(name), Intl, Date, Set, Map });
 
 const trackerSource = await readFile(new URL("../app/fantasy_football/dst/dst-tracker.tsx", import.meta.url), "utf8");
-const trackerCompiled = ts.transpileModule(`${trackerSource}\nexport { MatchupCard, PlayerCard };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const trackerCompiled = ts.transpileModule(`${trackerSource}\nexport { MatchupCard, PlayerCard, ScoreNotices };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const tracker = {};
-runInNewContext(trackerCompiled, { exports: tracker, require: name => name.endsWith(".css") ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith("presentation.js") ? presentation : name.endsWith("live-estimates.js") ? liveEstimates : name === "./games-view" ? exports : require(name), Intl, Date, Set, Map });
+runInNewContext(trackerCompiled, { exports: tracker, require: name => name.endsWith(".css") ? cssModule : name.endsWith("presentation.js") ? presentation : name.endsWith("live-estimates.js") ? liveEstimates : name.endsWith("health.js") ? health : name === "./games-view" ? exports : require(name), Intl, Date, Set, Map });
 
 const game = { id: "one", date: "2026-09-13T00:20:00Z", status: "Scheduled", statusState: "pre", period: 0, clock: "",
   teams: [{ abbreviation: "PHI", homeAway: "home", displayName: "Philadelphia Eagles", score: 0 }, { abbreviation: "WAS", homeAway: "away", displayName: "Washington Commanders", score: 0 }],
@@ -31,6 +33,8 @@ test("game list renders local kickoff days in order and makes each game an acces
   assert.match(html, /5:20 PM PDT/);
   assert.match(html, /Washington Commanders at Philadelphia Eagles/);
   assert.equal((html.match(/<button /g) || []).length, 2);
+  assert.match(html, /class="gameCardTeam" data-side="away"/);
+  assert.match(html, /class="gameCardTeam" data-side="home"/);
 });
 test("pregame detail renders mirrored groups, owner handles and projections with blank actuals", () => {
   const html = renderToStaticMarkup(React.createElement(exports.GameDetail, { game, timeZone: "America/New_York", myManager: "owner", week: 1 }));
@@ -97,4 +101,47 @@ test("both player views distinguish upcoming, live zero, overtime and final refe
       }
     }
   }
+});
+
+test("scoring notices are compact and matchup-specific while actual update failures stay prominent", () => {
+  const data = { generatedAt: "2026-09-14T01:50:11Z", health: { stale: true, warnings: [
+    { label: "CHI drive scoring", message: "Possession awaiting confirmation" },
+    { kind: "scoring", teams: ["CIN"], label: "CIN drive scoring", message: "Return awaiting confirmation" },
+  ] } };
+  const render = (teams, error = "") => renderToStaticMarkup(React.createElement(tracker.ScoreNotices, { data, teams, error }));
+  assert.equal(render(["PHI", "BAL"]), "");
+  const all = render();
+  assert.match(all, /<details/);
+  assert.match(all, /D\/ST scoring checks \(2\) · CHI, CIN/);
+  assert.doesNotMatch(all, / open|role="status"|Score update interrupted|delayed/);
+  assert.match(render(["CHI"]), /D\/ST scoring checks \(1\) · CHI/);
+  assert.doesNotMatch(render(["CHI"]), /CIN/);
+  assert.match(render(["PHI"], "Request timed out"), /role="status"/);
+  assert.match(render(["PHI"], "Request timed out"), /Retrying automatically/);
+});
+
+test("populated matchup stat lines keep each value and label together without truncating the row", async () => {
+  const player = { ...game.positionGroups[0].home[0], score: 24.72, projectedScore: 20.85, gameStatusState: "post", gameCompleted: true,
+    statsLine: "14/25 CMP, 203 YD, 3 TD, 7 CAR, 46 YD", opponent: "WAS", slot: "QB" };
+  for (const side of ["left", "right"]) {
+    const html = renderToStaticMarkup(React.createElement(tracker.PlayerCard, { player, team: {}, side, homeAway: "home", timeZone: "UTC", onSelectDefense() {} }));
+    assert.match(html, /class="playerStat">7 CAR<\/span>/);
+    assert.match(html, /class="playerStat">14\/25 CMP<\/span>/);
+    assert.match(html, /class="playerStat">46 YD<\/span>/);
+  }
+  const css = await readFile(new URL("../app/fantasy_football/dst/dst.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.playerStat\s*{\s*white-space: nowrap/);
+  assert.match(css, /grid-template-rows: subgrid/);
+  assert.match(css, /\.playerScore, \.defenseCard \.playerScore { grid-column: 1; grid-row: 2/);
+});
+
+test("mobile scores anchor to their team edge and NFL cards reverse the home-side grid", async () => {
+  const css = await readFile(new URL("../app/fantasy_football/dst/dst.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.scoreBlock, \.right \.scoreBlock {[^}]*width: max-content;[^}]*justify-self: start;[^}]*justify-items: center/);
+  assert.match(css, /\.right \.scoreBlock { justify-self: end; }/);
+  assert.match(css, /\.playerScore, \.playerRight \.playerScore {[^}]*width: max-content;[^}]*justify-self: start;[^}]*justify-items: center/);
+  assert.match(css, /\.playerRight \.playerScore { justify-self: end; }/);
+  assert.match(css, /\.gameCardTeam\[data-side="home"\] {[^}]*grid-template-areas: "score identity logo"; text-align: right/);
+  assert.match(css, /\.gameCardTeam {[^}]*grid-template-areas: "logo identity score"/);
+  assert.match(css, /--game-card-logo-size: 32px/);
 });

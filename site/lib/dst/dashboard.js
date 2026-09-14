@@ -7,6 +7,7 @@ import { withPostgameRefresh } from "./polling.js";
 import { sleeperDefaultDstAudit, SLEEPER_DEFAULT_SCORING_VERSION } from "./sleeper-default.js";
 import { buildGameViews, GAME_VIEW_VERSION } from "./games.js";
 import { LIVE_ESTIMATE_VERSION, withLiveProjection } from "./live-estimates.js";
+import { healthFlags } from "./health.js";
 
 const SLEEPER_BASE = "https://api.sleeper.app/v1";
 const ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
@@ -53,7 +54,7 @@ export async function getDashboard(request, db) {
             WHERE excluded.generated_at >= dst_live_cache.generated_at`)
             .bind(key, JSON.stringify(dashboard), dashboard.generatedAt).run();
         } catch {
-          dashboard.health.warnings.push({ label: "Backup storage", message: "Live scores loaded; durable backup temporarily unavailable" });
+          dashboard.health.warnings.push({ kind: "storage", label: "Backup storage", message: "Live scores loaded; durable backup temporarily unavailable" });
           dashboard.health.ok = false;
           dashboard.health.pollIntervalMs = Math.min(dashboard.health.pollIntervalMs || 60_000, 60_000);
         }
@@ -63,7 +64,7 @@ export async function getDashboard(request, db) {
       if (!cached) throw error;
       return { ...cached, servedAt: new Date().toISOString(), health: { ...cached.health,
         ok: false, stale: true, pollIntervalMs: LIVE_POLL_INTERVAL_MS,
-        warnings: [{ label: "Score update", message: `Showing last confirmed scores: ${error.message}` }] } };
+        warnings: [...(cached.health.warnings || []), { kind: "upstream", label: "Score update", message: `Showing last confirmed scores: ${error.message}` }] } };
     }
   })();
   dashboardRequests.set(key, task);
@@ -95,7 +96,7 @@ async function buildDashboard(request, db, previous) {
 
   let snapshot;
   try { snapshot = await readSnapshot(db, league.league_id, selectedSeason, week); }
-  catch { requestState.warnings.push({ label: "Saved results", message: "Saved results unavailable; recomputing from providers" }); }
+  catch { requestState.warnings.push({ kind: "storage", label: "Saved results", message: "Saved results unavailable; recomputing from providers" }); }
   if (snapshot) return dashboardFromSnapshot(snapshot);
 
   const dashboard = league.status === "pre_draft"
@@ -108,11 +109,12 @@ async function buildDashboard(request, db, previous) {
       dashboard.source.snapshotSaved = true;
     } catch (error) {
       requestState.warnings.push({
+        kind: "storage",
         label: "Finalized snapshot",
         message: error instanceof Error ? error.message : "Snapshot storage failed",
       });
       dashboard.health.ok = false;
-      dashboard.health.stale = true;
+      dashboard.health.stale = healthFlags(requestState).stale;
       dashboard.health.warnings = requestState.warnings;
     }
   }
@@ -219,7 +221,7 @@ async function buildScoredDashboard({ league, seasons, selectedSeason, week, wee
 
   const espnScores = scoreWeekFromEspn(events, summaries, league.scoring_settings || {});
   for (const score of Object.values(espnScores.dstScores)) {
-    for (const message of score.issues || []) requestState.warnings.push({ label: `${score.team} drive scoring`, message });
+    for (const message of score.issues || []) requestState.warnings.push({ kind: "scoring", teams: [score.team], label: `${score.team} drive scoring`, message });
   }
   if (matchups.length < rosters.length && week < Number(league.settings?.playoff_week_start || 15)) {
     throw new Error("Sleeper matchup response is incomplete");
@@ -240,7 +242,7 @@ async function buildScoredDashboard({ league, seasons, selectedSeason, week, wee
   });
   const liveGameCount = countLiveGames(events);
   for (const team of teams) for (const message of team.oldDstAudit.issues) {
-    requestState.warnings.push({ label: `${team.dstTeam} Sleeper default comparison`, message: `${team.dstTeam}: ${message}` });
+    requestState.warnings.push({ kind: "comparison", teams: [team.dstTeam], label: `${team.dstTeam} Sleeper default comparison`, message: `${team.dstTeam}: ${message}` });
   }
   const hasScheduledGames = events.some((event) => event.status?.type?.state === "pre");
   const pollIntervalMs = liveGameCount > 0
@@ -273,8 +275,7 @@ function baseDashboard({ league, seasons, selectedSeason, week, weeks, sleeperSt
   return {
     generatedAt: new Date().toISOString(),
     health: {
-      ok: requestState.warnings.length === 0,
-      stale: requestState.warnings.length > 0,
+      ...healthFlags(requestState),
       warnings: requestState.warnings,
       ...health,
       sources: requestState.sources,

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { starterSchedule } from "../../../lib/dst/presentation.js";
 import { playerDisplayProjection, teamLiveEstimate, matchupWinEstimate, LIVE_ESTIMATE_NOTE } from "../../../lib/dst/live-estimates.js";
+import { warningGroups } from "../../../lib/dst/health.js";
 import { GameList, GameDetail, type NflGame } from "./games-view";
 import styles from "./dst.module.css";
 
@@ -77,7 +78,8 @@ type Dashboard = {
   health: {
     ok: boolean;
     stale: boolean;
-    warnings: Array<{ message?: string }>;
+    warnings: Array<{ kind?: string; label?: string; message?: string; teams?: string[] }>;
+    sources?: Array<{ stale?: boolean }>;
     liveGameCount: number;
     pollIntervalMs: number;
     dataAsOf?: string;
@@ -435,13 +437,7 @@ export default function DstTracker() {
             <p>{view === "matchups" ? "Live projections · Estimated win chances" : "NFL games · Earliest kickoff first"}</p>
           </div>
           <p className={styles.estimateNote} title={LIVE_ESTIMATE_NOTE}>Sleeper-style estimates · D/ST uses a standard projection baseline.</p>
-          {error || data?.health.warnings.length ? (
-            <div className={`${styles.empty} ${styles.error}`} role="status">
-              <strong>{error ? "Score update interrupted" : data?.health.stale ? "Scores may be delayed" : "Update notice"}</strong>
-              <p>{error || data?.health.warnings.map((warning) => warning.message).join(" · ")}</p>
-              {data ? <span>Last score data: {formatDateTime(data.health.dataAsOf || data.generatedAt)}. Retrying automatically.</span> : <span>Retrying automatically. You can also tap Refresh.</span>}
-            </div>
-          ) : null}
+          <ScoreNotices data={data} error={error} />
           {!error && !data ? <div className={styles.empty}>Loading the league…</div> : null}
           <div role="tabpanel" id={`${view}-panel`} aria-labelledby={`${view}-tab`}>
           {!error && data && view === "matchups" && !sortedMatchups.length ? <div className={styles.empty}>{data.emptyState || "No matchups are available yet."}</div> : null}
@@ -490,7 +486,7 @@ export default function DstTracker() {
       >
         {activeGame && data ? <>
           <div className={styles.dialogHead}><div><span className={styles.eyebrow}>NFL Game · Week {data.selected.week}</span><h2>{(activeGame.teams.find(team => team.homeAway === "away") || activeGame.teams[0])?.abbreviation} v {(activeGame.teams.find(team => team.homeAway === "home") || activeGame.teams[1])?.abbreviation}</h2></div><button type="button" aria-label="Close game" onClick={closeMatchup}>Close</button></div>
-          {error || data.health.stale ? <p className={`${styles.empty} ${styles.error}`} role="status">{error || "Some game data is delayed."} Last received: {formatDateTime(data.health.dataAsOf || data.generatedAt)}. Retrying automatically.</p> : null}
+          <ScoreNotices data={data} error={error} teams={activeGame.teams.map(team => team.abbreviation)} />
           <GameDetail key={`${data.selected.season}-${data.selected.week}-${activeGame.id}`} game={activeGame} timeZone={userTimeZone} myManager={myManager} week={data.selected.week} />
         </> : null}
         {activeMatchup && data ? (
@@ -503,7 +499,7 @@ export default function DstTracker() {
               <button type="button" aria-label="Close matchup" onClick={closeMatchup}>Close</button>
             </div>
             <div className={styles.auditList}>
-              {error || data.health.stale ? <p className={`${styles.empty} ${styles.error}`} role="status">{error || "Some scores are provisional or delayed; projections and win chances may change."} Last received: {formatDateTime(data.health.dataAsOf || data.generatedAt)}.</p> : null}
+              <ScoreNotices data={data} error={error} teams={activeMatchup.teams.map(team => team.dstTeam)} />
               <p className={styles.estimateNote} title={LIVE_ESTIMATE_NOTE}>Sleeper-style estimates · D/ST uses a standard projection baseline.</p>
               <MatchupCard matchup={activeMatchup} isMine={activeMatchup.teams.some((team) => team.manager === myManager)} />
               <YetToPlaySummary matchup={activeMatchup} />
@@ -520,6 +516,27 @@ export default function DstTracker() {
       </dialog>
     </main>
   );
+}
+
+function ScoreNotices({ data, error, teams }: { data: Dashboard | null; error: string; teams?: string[] }) {
+  const groups = warningGroups(data?.health, teams);
+  const notices = [
+    { title: "D/ST scoring checks", rows: groups.scoring },
+    { title: "Default-score comparison checks", rows: groups.comparison },
+    { title: "Saved-data notice", rows: groups.storage },
+  ];
+  return <>
+    {error || groups.upstream.length ? <div className={`${styles.empty} ${styles.error}`} role="status">
+      <strong>Score update interrupted</strong>
+      <p>{error || groups.upstream.map(warning => warning.message).join(" · ")}</p>
+      <span>{data ? `Last score data: ${formatDateTime(data.health.dataAsOf || data.generatedAt)}. ` : ""}Retrying automatically.</span>
+    </div> : null}
+    {notices.filter(notice => notice.rows.length).map(notice => <details className={styles.scoreNotice} key={notice.title}>
+      <summary>{notice.title} ({notice.rows.length}){notice.rows === groups.scoring ? ` · ${[...new Set(notice.rows.flatMap(warning => warning.teams || [warning.label?.split(" ")[0]]).filter(Boolean))].join(", ")}` : ""}</summary>
+      {notice.rows === groups.scoring ? <p>Some D/ST plays still need confirmation. Affected scores and win estimates may change.</p> : null}
+      <ul>{notice.rows.map((warning, index) => <li key={`${warning.label}-${index}`}><strong>{warning.label}:</strong> {warning.message}</li>)}</ul>
+    </details>)}
+  </>;
 }
 
 function MatchupCard({ matchup, isMine, onOpen }: { matchup: Matchup; isMine: boolean; onOpen?: () => void }) {
@@ -671,7 +688,7 @@ function PlayerCard({ player, team, side, homeAway, timeZone, onSelectDefense }:
       </div>
       <div className={`${styles.playerGame} ${player.gameStatusState === "pre" ? styles.gamePending : ""}`}>
         {game.dateTime ? <time dateTime={game.dateTime} title={timeZone || undefined}>{game.primary}</time> : <strong>{game.primary}</strong>}
-        <span>{game.secondary}</span>
+        <span className={styles.playerStats}>{game.secondary.split(/,\s*/).map((stat, index) => <span className={styles.playerStat} key={`${stat}-${index}`}>{stat}</span>)}</span>
       </div>
     </>
   );

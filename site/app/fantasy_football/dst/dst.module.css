@@ -201,11 +201,13 @@
 .gameCardStatus[data-live="true"] { color: var(--dst-green); }
 .liveMarker { padding: 3px 6px; border-radius: 5px; background: rgba(87, 227, 178, 0.12); font-size: 10px; letter-spacing: .07em; }
 .gameCardTeams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px; }
-.gameCardTeam { display: grid; min-width: 0; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 12px; align-items: center; }
-.gameCardTeam > span:nth-child(2) { display: grid; gap: 2px; min-width: 0; }
+.gameCardTeam { display: grid; min-width: 0; grid-template-columns: var(--game-card-logo-size, 42px) minmax(0, 1fr) auto; grid-template-areas: "logo identity score"; gap: 12px; align-items: center; text-align: left; }
+.gameCardTeam[data-side="home"] { grid-template-columns: auto minmax(0, 1fr) var(--game-card-logo-size, 42px); grid-template-areas: "score identity logo"; text-align: right; }
+.gameCardTeam > .nflLogo { grid-area: logo; }
+.gameCardTeam > span:nth-child(2) { display: grid; grid-area: identity; gap: 2px; min-width: 0; }
 .gameCardTeam strong { font-size: 20px; }
 .gameCardTeam small { overflow: hidden; color: var(--dst-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.gameCardTeam > b { font-size: 28px; font-variant-numeric: tabular-nums; font-weight: 700; }
+.gameCardTeam > b { grid-area: score; font-size: 28px; font-variant-numeric: tabular-nums; font-weight: 700; }
 .nflLogo { position: relative; display: grid; width: 42px; height: 42px; flex: 0 0 42px; place-items: center; color: var(--dst-muted); font-size: 12px; }
 .nflLogo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: var(--dst-panel); }
 .gameCardFooter { display: flex; justify-content: space-between; gap: 10px; padding-top: 12px; border-top: 1px solid var(--dst-line); color: var(--dst-muted); font-size: 12px; }
@@ -250,7 +252,7 @@
 .gamePositionLabel[data-position="TE"] { color: #ffa556; }
 .gamePositionLabel[data-position="K"] { color: #c6a5ff; }
 .gamePositionLabel[data-position="DEF"] { color: #f4c95d; }
-.gamePlayerPair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 32px; }
+.gamePlayerPair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: stretch; gap: 32px; }
 .nflPlayer { min-width: 0; padding: 10px 6px 14px; border-radius: 10px; }
 .nflPlayer[data-completed="true"] { background: rgba(20, 28, 40, .22); }
 .playerFinal { color: var(--dst-muted); font-size: 12px; font-weight: 600; }
@@ -284,9 +286,9 @@
 }
 @media (max-width: 680px) {
   .viewPills button { padding: 8px 18px; font-size: 16px; }
-  .gameCardTeams { gap: 18px; }
+  .gameCardTeams { --game-card-logo-size: 32px; gap: 18px; }
   .page .nflGameCard { padding: 16px 14px 12px; border-radius: 18px; gap: 14px; }
-  .gameCardTeam { grid-template-columns: 32px minmax(0, 1fr) auto; gap: 7px; }
+  .gameCardTeam { gap: 7px; }
   .gameCardTeam .nflLogo { width: 32px; height: 32px; }
   .gameCardTeam strong { font-size: 17px; }
   .gameCardTeam small { font-size: 12px; }
@@ -539,6 +541,15 @@ button.matchupButton:hover .matchupSide {
   margin-bottom: 14px;
   color: var(--dst-red);
 }
+
+.scoreNotice { margin: 0 0 12px; border: 1px solid rgba(244, 201, 93, .18); border-radius: 10px; background: rgba(244, 201, 93, .035); color: var(--dst-muted); font-size: 13px; line-height: 1.45; }
+.scoreNotice summary { min-height: 44px; padding: 12px; cursor: pointer; color: #d1c59c; overflow-wrap: anywhere; }
+.scoreNotice summary:focus-visible { outline: 2px solid var(--dst-blue); outline-offset: 2px; border-radius: 10px; }
+.scoreNotice p { margin: 0 12px 8px; }
+.scoreNotice ul { margin: 0; padding: 0 14px 12px 28px; }
+.scoreNotice li + li { margin-top: 6px; }
+.auditList .scoreNotice { margin-bottom: 0; }
+.dialog > .scoreNotice, .dialog > .error { margin: 12px; }
 
 .statusStrip {
   display: grid;
@@ -894,6 +905,10 @@ button.playerCard.playerRight { text-align: right; }
   color: #bed1e5;
 }
 
+.playerGame > .playerStats { display: flex; flex-wrap: wrap; align-content: start; gap: 2px 7px; overflow: visible; white-space: normal; }
+.playerRight .playerStats { justify-content: flex-end; }
+.playerStat { white-space: nowrap; }
+
 .dstDrilldown {
   scroll-margin-top: 100px;
   display: grid;
@@ -1071,8 +1086,8 @@ button.playerCard.playerRight { text-align: right; }
   .matchupGrid { gap: 18px; }
   .matchupButton, .matchupSide { min-height: 0; }
   .comparison { grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr); }
-  .matchupSide { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 6px; padding: 12px 10px; border-radius: 18px; }
-  .matchupSide.right { grid-template-columns: minmax(0, 1fr) 28px; }
+  .matchupSide { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 6px; padding: 12px 10px; border-radius: 18px; text-align: left; }
+  .matchupSide.right { grid-template-columns: minmax(0, 1fr) 28px; text-align: right; }
   .matchupSide .avatar { width: 28px; height: 28px; border-width: 2px; grid-column: 1; grid-row: 1; font-size: 11px; }
   .matchupSide.right .avatar { grid-column: 2; }
   .teamContent { display: contents; }
@@ -1082,10 +1097,12 @@ button.playerCard.playerRight { text-align: right; }
   .managerHandle, .matchupMeta { font-size: 12px; }
   .teamNameRow, .right .teamNameRow { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .teamName, .dialog .teamName {
-    display: block; overflow: hidden; font-size: 15px; line-height: 1.2;
-    min-height: 1.2em; text-overflow: ellipsis; white-space: nowrap;
+    display: block; overflow: visible; font-size: 15px; line-height: 1.2;
+    min-height: 2.4em; white-space: normal; overflow-wrap: anywhere;
   }
-  .scoreBlock, .right .scoreBlock { display: grid; justify-items: center; gap: 4px; }
+  /* Keep the projection centered under its number, not the entire card. */
+  .scoreBlock, .right .scoreBlock { display: grid; width: max-content; max-width: 100%; justify-self: start; justify-items: center; gap: 4px; }
+  .right .scoreBlock { justify-self: end; }
   .scoreBlock strong { font-size: 22px; }
   .scoreBlock span { font-size: 12px; letter-spacing: 0; }
   .matchupMeter { height: 3px; }
@@ -1114,7 +1131,7 @@ button.playerCard.playerRight { text-align: right; }
   .playerCard, button.playerCard { min-height: 0; gap: 5px; padding: 8px; border-radius: 10px; align-content: start; }
   .playerTop, .playerRight .playerTop { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
   .playerAvatar { display: none; }
-  .playerMain { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 5px; }
+  .playerMain { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 2px 5px; }
   .playerMain strong { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
   .playerMain span { font-size: 12px; line-height: 1.2; }
   .playerMain .playerPosition { display: none; }
@@ -1122,9 +1139,10 @@ button.playerCard.playerRight { text-align: right; }
   .playerMain .injuryTag { font-size: 12px; margin-left: 0; padding: 0 3px; }
   .playerRight .playerMain { justify-content: flex-end; }
   .playerScore, .playerRight .playerScore {
-    display: grid; justify-items: center;
+    display: grid; width: max-content; max-width: 100%; justify-self: start; justify-items: center;
     gap: 3px; text-align: center;
   }
+  .playerRight .playerScore { justify-self: end; }
   .playerScore strong { font-size: 20px; line-height: 1.1; }
   .playerScore span { font-size: 12px; line-height: 1.2; }
   .playerGame { gap: 3px; padding: 0; border-radius: 0; background: transparent; }
@@ -1140,6 +1158,25 @@ button.playerCard.playerRight { text-align: right; }
   .playerRight .defenseAvatar { grid-column: 2; }
   .drilldownHead { align-items: flex-start; flex-wrap: wrap; }
   .auditNote, .auditEvent span, .auditEvent small, .auditEvent p { font-size: 12px; }
+
+  /* Shared rows keep names, scores, game status, and complete stat tokens aligned
+     even when one side wraps. Subgrid is supported by current iOS Safari. */
+  @supports (grid-template-rows: subgrid) {
+    .starterRow { grid-template-rows: auto auto auto auto; row-gap: 5px; }
+    .starterRow > :first-child { grid-column: 1; grid-row: 1 / -1; }
+    .starterRow > :last-child { grid-column: 3; grid-row: 1 / -1; }
+    .playerCard, button.playerCard { grid-template-columns: minmax(0, 1fr); grid-template-rows: subgrid; }
+    .slotPill { grid-column: 2; grid-row: 2; align-self: center; }
+    .playerTop, .playerRight .playerTop, .defenseCard .playerTop, .defenseCard.playerRight .playerTop, .playerGame { display: contents; }
+    .playerMain, .defenseCard .playerMain, .defenseCard.playerRight .playerMain { grid-column: 1; grid-row: 1; align-content: start; }
+    .playerScore, .defenseCard .playerScore { grid-column: 1; grid-row: 2; align-content: start; }
+    .playerGame > time, .playerGame > strong { grid-column: 1; grid-row: 3; }
+    .playerGame > span { grid-column: 1; grid-row: 4; }
+    .defenseAvatar, .playerRight .defenseAvatar { grid-column: 1; grid-row: 1; align-self: start; justify-self: start; }
+    .playerRight .defenseAvatar { justify-self: end; }
+    .defenseCard .playerMain { padding-left: 34px; min-height: 28px; }
+    .defenseCard.playerRight .playerMain { padding-left: 0; padding-right: 34px; }
+  }
 }
 
 @media (max-width: 360px) {

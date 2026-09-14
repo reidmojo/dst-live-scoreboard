@@ -2,10 +2,10 @@
 
 - Site: https://r31d.wiki/fantasy_football/dst
 - Source directory in this repository: `site/`
-- Sites version: **29**
-- Sites source commit: `ebb94d2529091422bfc4fa1bc953226b92d52a48`
-- Source Git tree: `e0bce18027c8ce7ceac60d629acf964ea23f96a4`
-- Deployment archive SHA-256: `1ec46ce35aa1b764dad09f91dd3c8c6453586b387dc9b67a8299083f21977eb2`
+- Sites version: **30**
+- Sites source commit: `22ae388da67ab6c6c418ba5d0f70f187dbd51820`
+- Source Git tree: `8121e5e3ad477110b22b7d83d5d678b09ef110a5`
+- Deployment archive SHA-256: `90efd67bdfd3ba2a71bfe94731fc1b364e542c2d9f5da8ce04c88f2df8a626ef`
 
 The `site/` subtree is copied byte-for-byte from the tracked source used to build
 this Sites release. It is not a rewrite or a separately maintained implementation.
@@ -22,6 +22,11 @@ attestation of what Cloudflare is executing.
 
 ## Included changes
 
+- Distinguish upstream delays from scoring checks; show compact, team-specific
+  scoring notices without weakening finalization safeguards.
+- Anchor mobile scores to their team's edge, keep projections centered beneath
+  each score, align player details, and wrap stat tokens without splitting them.
+- Restore mirrored away/home alignment in Games and wrap long fantasy team names.
 - Live player/team projections and Sleeper-style pregame/live win estimates.
 - Original projection shown as a reference after a player's game is final;
   team forecasts and odds still use the actual score.
@@ -29,7 +34,7 @@ attestation of what Cloudflare is executing.
 - Both Matchups and Games views, scoring audits, two-decimal fantasy points,
   mobile layout, and existing scoring reliability checks.
 
-Validation before publishing: 202 automated tests, TypeScript checks, and the
+Validation before publishing: 208 automated tests, TypeScript checks, and the
 production build passed. Production is deployed through Sites to Cloudflare;
 no GitHub Actions workflow is required or added by this update.
 

@@ -61,7 +61,7 @@ export function GameList({ games, timeZone, onOpen }: { games: NflGame[]; timeZo
         return <button type="button" className={styles.nflGameCard} key={game.id} onClick={() => onOpen(game)} aria-label={`${away?.displayName || away?.abbreviation} at ${home?.displayName || home?.abbreviation}. ${gameStatus(game, timeZone)}. View player performances`}>
           <span className={styles.gameCardStatus} data-live={game.statusState === "in"}>{game.statusState === "in" ? <span className={styles.liveMarker}>LIVE</span> : null}{gameStatus(game, timeZone)}</span>
           <span className={styles.gameCardTeams}>
-            {[away, home].map((team, index) => <span className={styles.gameCardTeam} key={team?.abbreviation || index}>
+            {[away, home].map((team, index) => <span className={styles.gameCardTeam} data-side={index === 0 ? "away" : "home"} key={team?.abbreviation || index}>
               <TeamLogo team={team} /><span><strong>{team?.abbreviation || "TBD"}</strong><small>{team?.shortName || team?.displayName}</small></span>
               <b>{game.statusState === "pre" ? "—" : team?.score ?? "—"}</b>
             </span>)}

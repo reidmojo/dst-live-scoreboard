@@ -37,7 +37,7 @@ export function createUpstreamClient({ fetcher = (...args) => fetch(...args), no
     }
     const label = options.label || new URL(url).hostname;
     if (failure) {
-      options.requestState?.warnings.push({ label, fetchedAt: entry ? new Date(entry.time).toISOString() : null,
+      options.requestState?.warnings.push({ kind: "upstream", label, fetchedAt: entry ? new Date(entry.time).toISOString() : null,
         ageSeconds: entry ? Math.floor((now() - entry.time) / 1000) : null,
         message: entry ? `${label}: showing last received data (${failure.message})` : `${label}: unavailable (${failure.message})` });
       if (!entry) {
