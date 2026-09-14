@@ -1,0 +1,1 @@
+ALTER TABLE `ptw_time_responses` ADD `answered_slots` text;

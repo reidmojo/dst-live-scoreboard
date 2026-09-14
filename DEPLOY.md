@@ -1,5 +1,10 @@
 # Deploying the DST Live Scoreboard
 
+> **Legacy instructions:** this document describes the original Render app.
+> The current r31d.wiki deployment uses the source in [`site/`](site/), published
+> through Sites to Cloudflare without GitHub Actions. See [README](README.md) and
+> the [live source record](LIVE-SOURCE.md).
+
 The app is a plain Node web service. It serves the frontend and proxies ESPN/Sleeper API calls from the same process.
 
 ## Recommended: Render

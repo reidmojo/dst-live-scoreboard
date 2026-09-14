@@ -1,0 +1,639 @@
+[
+  {
+    "name": "DeeJay Dallas kickoff return",
+    "source": "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=401671617",
+    "scoringTeam": "ARI",
+    "concedingTeam": "BUF",
+    "event": {
+      "id": "401671617",
+      "status": {
+        "type": {
+          "state": "in"
+        }
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "id": "2",
+              "team": {
+                "abbreviation": "BUF"
+              }
+            },
+            {
+              "id": "22",
+              "team": {
+                "abbreviation": "ARI"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "summary": {
+      "drives": {
+        "previous": [
+          {
+            "id": "40167161715",
+            "result": "TD",
+            "start": {
+              "period": {
+                "type": "quarter",
+                "number": 4
+              },
+              "clock": {
+                "displayValue": "8:44"
+              },
+              "yardLine": 0,
+              "text": "BUF 0"
+            },
+            "end": {
+              "period": {
+                "type": "quarter",
+                "number": 4
+              },
+              "clock": {
+                "displayValue": "8:31"
+              },
+              "yardLine": 0,
+              "text": "BUF 0"
+            },
+            "offensivePlays": 0,
+            "team": {
+              "id": "22",
+              "abbreviation": "ARI"
+            },
+            "plays": [
+              {
+                "id": "4016716173273",
+                "type": {
+                  "id": "32",
+                  "text": "Kickoff Return Touchdown",
+                  "abbreviation": "TD"
+                },
+                "text": "DeeJay Dallas 96 Yd KO Return TWO-POINT CONVERSION ATTEMPT. J.Conner rushes right guard. ATTEMPT SUCCEEDS.",
+                "scoringPlay": true,
+                "scoringType": {
+                  "name": "touchdown",
+                  "displayName": "Touchdown",
+                  "abbreviation": "TD"
+                },
+                "start": {
+                  "down": 0,
+                  "distance": 0,
+                  "yardLine": 96,
+                  "yardsToEndzone": 65,
+                  "team": {
+                    "id": "2"
+                  }
+                },
+                "end": {
+                  "down": -1,
+                  "distance": 10,
+                  "yardLine": 0,
+                  "yardsToEndzone": 15,
+                  "team": {
+                    "id": "22"
+                  }
+                },
+                "period": {
+                  "number": 4
+                },
+                "clock": {
+                  "displayValue": "8:31"
+                }
+              },
+              {
+                "id": "4016716173311",
+                "type": {
+                  "id": "74",
+                  "text": "Official Timeout",
+                  "abbreviation": "Off TO"
+                },
+                "text": "Timeout at 08:31.",
+                "scoringPlay": false,
+                "start": {
+                  "down": 1,
+                  "distance": 10,
+                  "yardLine": 65,
+                  "yardsToEndzone": 65,
+                  "downDistanceText": "1st & 10 at ARI 35",
+                  "shortDownDistanceText": "1st & 10",
+                  "possessionText": "ARI 35",
+                  "team": {
+                    "id": "22"
+                  }
+                },
+                "end": {
+                  "down": 1,
+                  "distance": 10,
+                  "yardLine": 65,
+                  "yardsToEndzone": 65,
+                  "downDistanceText": "1st & 10 at ARI 35",
+                  "shortDownDistanceText": "1st & 10",
+                  "possessionText": "ARI 35",
+                  "team": {
+                    "id": "22"
+                  }
+                },
+                "period": {
+                  "number": 4
+                },
+                "clock": {
+                  "displayValue": "8:31"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "scoringPlays": [
+        {
+          "id": "4016716173273",
+          "type": {
+            "id": "32",
+            "text": "Kickoff Return Touchdown",
+            "abbreviation": "TD"
+          },
+          "text": "DeeJay Dallas 96 Yd Kickoff Return (James Conner Run for Two-Point Conversion)",
+          "scoringType": {
+            "name": "touchdown",
+            "displayName": "Touchdown",
+            "abbreviation": "TD"
+          },
+          "period": {
+            "number": 4
+          },
+          "clock": {
+            "value": 511.0,
+            "displayValue": "8:31"
+          },
+          "team": {
+            "id": "22",
+            "abbreviation": "ARI"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "Cody Davis recovers kickoff fumble",
+    "source": "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=401547621",
+    "scoringTeam": "NE",
+    "concedingTeam": "DEN",
+    "event": {
+      "id": "401547621",
+      "status": {
+        "type": {
+          "state": "in"
+        }
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "id": "7",
+              "team": {
+                "abbreviation": "DEN"
+              }
+            },
+            {
+              "id": "17",
+              "team": {
+                "abbreviation": "NE"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "summary": {
+      "drives": {
+        "previous": [
+          {
+            "id": "40154762119",
+            "result": "FUMBLE TD",
+            "start": {
+              "period": {
+                "type": "quarter",
+                "number": 3
+              },
+              "clock": {
+                "displayValue": "1:34"
+              },
+              "yardLine": 0,
+              "text": "DEN 0"
+            },
+            "end": {
+              "period": {
+                "type": "quarter",
+                "number": 3
+              },
+              "clock": {
+                "displayValue": "1:28"
+              },
+              "yardLine": 0,
+              "text": "DEN 0"
+            },
+            "offensivePlays": 0,
+            "team": {
+              "id": "7",
+              "abbreviation": "DEN"
+            },
+            "plays": [
+              {
+                "id": "4015476212754",
+                "type": {
+                  "id": "32",
+                  "text": "Kickoff Return Touchdown",
+                  "abbreviation": "TD"
+                },
+                "text": "C.Ryland kicks 66 yards from NE 35 to DEN -1. M.Mims MUFFS catch, and recovers at DEN 4. M.Mims to DEN 9 for 5 yards (M.Mapu). FUMBLES (M.Mapu), RECOVERED by NE-C.Davis at DEN 1. C.Davis for 1 yard, TOUCHDOWN.C.Ryland extra point is GOOD, Center-J.Cardona, Holder-B.Baringer.",
+                "scoringPlay": true,
+                "scoringType": {
+                  "name": "touchdown",
+                  "displayName": "Touchdown",
+                  "abbreviation": "TD"
+                },
+                "start": {
+                  "down": 0,
+                  "distance": 0,
+                  "yardLine": 65,
+                  "yardsToEndzone": 65,
+                  "team": {
+                    "id": "17"
+                  }
+                },
+                "end": {
+                  "down": -1,
+                  "distance": 10,
+                  "yardLine": 0,
+                  "yardsToEndzone": 15,
+                  "team": {
+                    "id": "17"
+                  }
+                },
+                "period": {
+                  "number": 3
+                },
+                "clock": {
+                  "displayValue": "1:28"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "scoringPlays": [
+        {
+          "id": "4015476212754",
+          "type": {
+            "id": "32",
+            "text": "Kickoff Return Touchdown",
+            "abbreviation": "TD"
+          },
+          "text": "Cody Davis 1 Yd Fumble Return (Chad Ryland Kick)",
+          "scoringType": {
+            "name": "touchdown",
+            "displayName": "Touchdown",
+            "abbreviation": "TD"
+          },
+          "period": {
+            "number": 3
+          },
+          "clock": {
+            "value": 88.0,
+            "displayValue": "1:28"
+          },
+          "team": {
+            "id": "17",
+            "abbreviation": "NE"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "Grant Stuard blocked punt return",
+    "source": "https://site.web.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=401547570",
+    "scoringTeam": "IND",
+    "concedingTeam": "TEN",
+    "event": {
+      "id": "401547570",
+      "status": {
+        "type": {
+          "state": "in"
+        }
+      },
+      "competitions": [
+        {
+          "competitors": [
+            {
+              "id": "10",
+              "team": {
+                "abbreviation": "TEN"
+              }
+            },
+            {
+              "id": "11",
+              "team": {
+                "abbreviation": "IND"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "summary": {
+      "drives": {
+        "previous": [
+          {
+            "id": "40154757018",
+            "result": "BLOCKED PUNT TD",
+            "start": {
+              "period": {
+                "type": "quarter",
+                "number": 3
+              },
+              "clock": {
+                "displayValue": "1:59"
+              },
+              "yardLine": 30,
+              "text": "TEN 30"
+            },
+            "end": {
+              "period": {
+                "type": "quarter",
+                "number": 3
+              },
+              "clock": {
+                "displayValue": "0:19"
+              },
+              "yardLine": 36,
+              "text": "TEN 36"
+            },
+            "offensivePlays": 3,
+            "team": {
+              "id": "10",
+              "abbreviation": "TEN"
+            },
+            "plays": [
+              {
+                "id": "4015475703282",
+                "type": {
+                  "id": "3",
+                  "text": "Pass Incompletion"
+                },
+                "text": "(Shotgun) W.Levis pass incomplete deep right to D.Hopkins (D.Baker).",
+                "scoringPlay": false,
+                "start": {
+                  "down": 1,
+                  "distance": 10,
+                  "yardLine": 30,
+                  "yardsToEndzone": 6,
+                  "downDistanceText": "1st & 10 at TEN 30",
+                  "shortDownDistanceText": "1st & 10",
+                  "possessionText": "TEN 30",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "end": {
+                  "down": 2,
+                  "distance": 6,
+                  "yardLine": 30,
+                  "yardsToEndzone": 70,
+                  "downDistanceText": "2nd & 6 at TEN 30",
+                  "shortDownDistanceText": "2nd & 6",
+                  "possessionText": "TEN 30",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "period": {
+                  "number": 3
+                },
+                "clock": {
+                  "displayValue": "1:59"
+                }
+              },
+              {
+                "id": "4015475703317",
+                "type": {
+                  "id": "5",
+                  "text": "Rush",
+                  "abbreviation": "RUSH"
+                },
+                "text": "D.Henry right end to TEN 30 for no gain (S.Ebukam; Ty.Lewis).",
+                "scoringPlay": false,
+                "start": {
+                  "down": 2,
+                  "distance": 10,
+                  "yardLine": 30,
+                  "yardsToEndzone": 70,
+                  "downDistanceText": "2nd & 10 at TEN 30",
+                  "shortDownDistanceText": "2nd & 10",
+                  "possessionText": "TEN 30",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "end": {
+                  "down": 3,
+                  "distance": 5,
+                  "yardLine": 30,
+                  "yardsToEndzone": 70,
+                  "downDistanceText": "3rd & 5 at TEN 30",
+                  "shortDownDistanceText": "3rd & 5",
+                  "possessionText": "TEN 30",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "period": {
+                  "number": 3
+                },
+                "clock": {
+                  "displayValue": "1:54"
+                }
+              },
+              {
+                "id": "4015475703339",
+                "type": {
+                  "id": "24",
+                  "text": "Pass Reception",
+                  "abbreviation": "REC"
+                },
+                "text": "(Shotgun) W.Levis pass short left to T.Spears pushed ob at TEN 36 for 6 yards (K.Moore).",
+                "scoringPlay": false,
+                "start": {
+                  "down": 3,
+                  "distance": 10,
+                  "yardLine": 30,
+                  "yardsToEndzone": 70,
+                  "downDistanceText": "3rd & 10 at TEN 30",
+                  "shortDownDistanceText": "3rd & 10",
+                  "possessionText": "TEN 30",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "end": {
+                  "down": 4,
+                  "distance": 13,
+                  "yardLine": 36,
+                  "yardsToEndzone": 64,
+                  "downDistanceText": "4th & 13 at TEN 36",
+                  "shortDownDistanceText": "4th & 13",
+                  "possessionText": "TEN 36",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "period": {
+                  "number": 3
+                },
+                "clock": {
+                  "displayValue": "1:09"
+                }
+              },
+              {
+                "id": "4015475703369",
+                "type": {
+                  "id": "37",
+                  "text": "Blocked Punt Touchdown",
+                  "abbreviation": "TD"
+                },
+                "text": "Grant Stuard 18 Yd Return of Blocked Punt (Two-Point Pass Conversion Failed)",
+                "scoringPlay": true,
+                "scoringType": {
+                  "name": "touchdown",
+                  "displayName": "Touchdown",
+                  "abbreviation": "TD"
+                },
+                "start": {
+                  "down": 4,
+                  "distance": 4,
+                  "yardLine": 36,
+                  "yardsToEndzone": 64,
+                  "downDistanceText": "4th & 4 at TEN 36",
+                  "shortDownDistanceText": "4th & 4",
+                  "possessionText": "TEN 36",
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "end": {
+                  "down": -1,
+                  "distance": 1,
+                  "yardLine": 0,
+                  "yardsToEndzone": 15,
+                  "team": {
+                    "id": "11"
+                  }
+                },
+                "period": {
+                  "number": 3
+                },
+                "clock": {
+                  "displayValue": "0:19"
+                }
+              },
+              {
+                "id": "4015475703398",
+                "type": {
+                  "id": "57",
+                  "text": "Defensive 2pt Conversion",
+                  "abbreviation": "D2P"
+                },
+                "text": "TWO-POINT CONVERSION ATTEMPT. G.Minshew pass to Z.Moss is incomplete. ATTEMPT FAILS. DEFENSIVE TWO-POINT CONVERSION. A.Hooker intercepted the try attempt.",
+                "scoringPlay": true,
+                "scoringType": {
+                  "name": "defensive-two-point-conversion",
+                  "displayName": "Defensive Two Point Conversion",
+                  "abbreviation": "D2P"
+                },
+                "start": {
+                  "down": 0,
+                  "distance": 0,
+                  "yardLine": 2,
+                  "yardsToEndzone": 0,
+                  "team": {
+                    "id": "11"
+                  }
+                },
+                "end": {
+                  "down": -1,
+                  "distance": 0,
+                  "yardLine": 0,
+                  "yardsToEndzone": 65,
+                  "team": {
+                    "id": "10"
+                  }
+                },
+                "period": {
+                  "number": 3
+                },
+                "clock": {
+                  "displayValue": "0:19"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "scoringPlays": [
+        {
+          "id": "4015475703369",
+          "type": {
+            "id": "37",
+            "text": "Blocked Punt Touchdown",
+            "abbreviation": "TD"
+          },
+          "text": "Grant Stuard 18 Yd Return of Blocked Punt (Two-Point Pass Conversion Failed)",
+          "scoringType": {
+            "name": "touchdown",
+            "displayName": "Touchdown",
+            "abbreviation": "TD"
+          },
+          "period": {
+            "number": 3
+          },
+          "clock": {
+            "value": 19.0,
+            "displayValue": "0:19"
+          },
+          "team": {
+            "id": "11",
+            "abbreviation": "IND"
+          }
+        },
+        {
+          "id": "4015475703398",
+          "type": {
+            "id": "57",
+            "text": "Defensive 2pt Conversion",
+            "abbreviation": "D2P"
+          },
+          "text": "Amani Hooker Defensive PAT Conversion  ",
+          "scoringType": {
+            "name": "defensive-two-point-conversion",
+            "displayName": "Defensive Two Point Conversion",
+            "abbreviation": "D2P"
+          },
+          "period": {
+            "number": 3
+          },
+          "clock": {
+            "value": 19.0,
+            "displayValue": "0:19"
+          },
+          "team": {
+            "id": "10",
+            "abbreviation": "TEN"
+          }
+        }
+      ]
+    }
+  }
+]

@@ -1,5 +1,63 @@
 # DST Live Scoreboard
 
+## Current live site — start here
+
+The current app is live at [r31d.wiki/fantasy_football/dst](https://r31d.wiki/fantasy_football/dst).
+Its complete, auditable source is in [`site/`](site/), including the scoring engine,
+responsive UI, tests, database schema/migrations, and locked dependencies.
+The root-level Node/Render app below is preserved as **legacy code**; it does not
+power the current site.
+
+### Audit the running code
+
+- [Custom D/ST scoring engine](site/lib/dst/scoring.js)
+- [Data fetching and team totals](site/lib/dst/dashboard.js)
+- [Sleeper-style projections and win estimates](site/lib/dst/live-estimates.js)
+- [Projection model provenance and limitations](site/docs/dst-live-estimates.md)
+- [Matchups UI](site/app/fantasy_football/dst/dst-tracker.tsx) and [Games UI](site/app/fantasy_football/dst/games-view.tsx)
+- [Automated tests](site/tests/)
+- [Live source/deployment record](LIVE-SOURCE.md)
+
+The app uses React/TypeScript and Vinext/Vite, a JavaScript scoring engine on
+Cloudflare Workers, and Cloudflare D1 (SQLite). Sleeper supplies league/player data;
+ESPN supplies game and play-by-play data. Actual D/ST scores use our custom rules.
+The temporary win estimates reproduce Sleeper's public model, with a standard
+D/ST projection baseline. They are not official Sleeper win probabilities.
+
+### Run the current app locally
+
+Use Node 22.13 or newer, then:
+
+```bash
+cd site
+npm ci
+npm run dev
+```
+
+Open `/fantasy_football/dst` on the local URL printed by the server. D1 is emulated
+locally; apply the SQLite migrations in `site/drizzle/` to initialize durable
+storage. The DST endpoint can compute from its upstream providers while its
+cache/snapshot storage is unavailable. Do not connect local development to the
+production database.
+
+To run the tests and build without using GitHub Actions:
+
+```bash
+node --test tests/*.test.mjs
+npm run build
+```
+
+Publishing happens through Sites to Cloudflare, independently of GitHub Actions.
+Pushing this repository alone does not publish the current site. The `site/` folder
+is an exact source snapshot of the deployment identified in `LIVE-SOURCE.md`.
+No environment files, credentials, local databases, or collected survey responses
+are included. The full shared site project is retained so its framework and tests
+remain auditable alongside the DST feature.
+
+---
+
+## Legacy Node/Render app
+
 Live custom DST scoring dashboard for a Sleeper fantasy league.
 
 The app combines:
