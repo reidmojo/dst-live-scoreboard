@@ -1179,6 +1179,12 @@ button.playerCard.playerRight { text-align: right; }
   }
 }
 
+/* Portrait score blocks face the center gutter; preserve desktop/landscape. */
+@media (max-width: 680px) and (orientation: portrait) {
+  .scoreBlock, .playerScore { justify-self: end; }
+  .right .scoreBlock, .playerRight .playerScore { justify-self: start; }
+}
+
 @media (max-width: 360px) {
   .shell { padding-right: 8px; padding-left: 8px; }
   .auditList { padding-right: 8px; padding-left: 8px; }

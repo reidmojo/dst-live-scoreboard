@@ -135,12 +135,15 @@ test("populated matchup stat lines keep each value and label together without tr
   assert.match(css, /\.playerScore, \.defenseCard \.playerScore { grid-column: 1; grid-row: 2/);
 });
 
-test("mobile scores anchor to their team edge and NFL cards reverse the home-side grid", async () => {
+test("portrait score blocks face the center without changing desktop or landscape layouts", async () => {
   const css = await readFile(new URL("../app/fantasy_football/dst/dst.module.css", import.meta.url), "utf8");
   assert.match(css, /\.scoreBlock, \.right \.scoreBlock {[^}]*width: max-content;[^}]*justify-self: start;[^}]*justify-items: center/);
   assert.match(css, /\.right \.scoreBlock { justify-self: end; }/);
   assert.match(css, /\.playerScore, \.playerRight \.playerScore {[^}]*width: max-content;[^}]*justify-self: start;[^}]*justify-items: center/);
   assert.match(css, /\.playerRight \.playerScore { justify-self: end; }/);
+  const portrait = css.slice(css.indexOf("@media (max-width: 680px) and (orientation: portrait)"));
+  assert.match(portrait, /^@media \(max-width: 680px\) and \(orientation: portrait\) \{\s*\.scoreBlock, \.playerScore \{ justify-self: end; \}\s*\.right \.scoreBlock, \.playerRight \.playerScore \{ justify-self: start; \}\s*\}/);
+  assert.ok(css.indexOf(portrait) > css.lastIndexOf(".playerRight .playerScore { justify-self: end; }"));
   assert.match(css, /\.gameCardTeam\[data-side="home"\] {[^}]*grid-template-areas: "score identity logo"; text-align: right/);
   assert.match(css, /\.gameCardTeam {[^}]*grid-template-areas: "logo identity score"/);
   assert.match(css, /--game-card-logo-size: 32px/);
