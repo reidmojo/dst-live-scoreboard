@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { starterSchedule } from "../../../lib/dst/presentation.js";
+import { finalGameResult, starterSchedule } from "../../../lib/dst/presentation.js";
 import { playerDisplayProjection, teamLiveEstimate, matchupWinEstimate, LIVE_ESTIMATE_NOTE } from "../../../lib/dst/live-estimates.js";
 import { warningGroups } from "../../../lib/dst/health.js";
 import { GameList, GameDetail, type NflGame } from "./games-view";
@@ -657,17 +657,17 @@ function StarterRows({ matchup, nflGames, timeZone, onSelectDefense }: { matchup
     const slot = left?.slot || right?.slot || "STARTER";
     return (
       <div className={styles.starterRow} key={`${slot}-${index}`}>
-        <PlayerCard player={left} team={leftTeam} side="left" homeAway={starterSchedule(left?.team, nflGames).homeAway} timeZone={timeZone} onSelectDefense={onSelectDefense} />
+        <PlayerCard player={left} team={leftTeam} side="left" homeAway={starterSchedule(left?.team, nflGames).homeAway} nflGames={nflGames} timeZone={timeZone} onSelectDefense={onSelectDefense} />
         <span className={styles.slotPill} data-slot={slot.toUpperCase()}>{slotLabel(slot)}</span>
-        <PlayerCard player={right} team={rightTeam} side="right" homeAway={starterSchedule(right?.team, nflGames).homeAway} timeZone={timeZone} onSelectDefense={onSelectDefense} />
+        <PlayerCard player={right} team={rightTeam} side="right" homeAway={starterSchedule(right?.team, nflGames).homeAway} nflGames={nflGames} timeZone={timeZone} onSelectDefense={onSelectDefense} />
       </div>
     );
   });
 }
 
-function PlayerCard({ player, team, side, homeAway, timeZone, onSelectDefense }: { player?: Starter; team?: Team; side: "left" | "right"; homeAway: string; timeZone: string; onSelectDefense: (team: Team, trigger: HTMLButtonElement) => void }) {
+function PlayerCard({ player, team, side, homeAway, nflGames = [], timeZone, onSelectDefense }: { player?: Starter; team?: Team; side: "left" | "right"; homeAway: string; nflGames?: NflGame[]; timeZone: string; onSelectDefense: (team: Team, trigger: HTMLButtonElement) => void }) {
   if (!player || !team) return <div />;
-  const game = playerGameDisplay(player, timeZone, homeAway);
+  const game = playerGameDisplay(player, timeZone, homeAway, finalGameResult(player.team, nflGames));
   const pregame = player.gameStatusState === "pre";
   const final = player.gameStatusState === "post" && player.gameCompleted === true;
   const projectionTitle = final ? `Pregame projection — reference only; team estimates use the final score.${player.isDefense ? " Standard D/ST baseline." : ""}`
@@ -677,7 +677,7 @@ function PlayerCard({ player, team, side, homeAway, timeZone, onSelectDefense }:
       <div className={styles.playerTop}>
         <PlayerAvatar player={player} />
         <div className={styles.playerMain}>
-          <strong>{player.isDefense ? player.team : player.shortName || player.name}</strong>
+          <strong title={player.name} aria-label={player.name}>{player.isDefense ? player.team : player.shortName || player.name}</strong>
           <span>{player.isDefense ? "D/ST · View audit" : <><span className={styles.playerPosition} data-flex={player.position !== player.slot}>{player.position || player.slot} · </span>{player.team}</>} {player.injuryStatus ? <b className={styles.injuryTag} data-status={player.injuryStatus}>{player.injuryStatus}</b> : null}</span>
         </div>
         <div className={styles.playerScore}>
@@ -721,7 +721,7 @@ function PlayerAvatar({ player }: { player: Starter }) {
   );
 }
 
-function playerGameDisplay(player: Starter, timeZone: string, homeAway: string) {
+function playerGameDisplay(player: Starter, timeZone: string, homeAway: string, finalResult: string) {
   const opponent = player.opponent ? ` ${homeAway === "away" ? "@" : "vs"} ${player.opponent}` : "";
   if (player.gameStatusState === "pre") {
     return {
@@ -735,7 +735,7 @@ function playerGameDisplay(player: Starter, timeZone: string, homeAway: string) 
     return { primary: `${liveClock}${opponent}`, secondary: player.statsLine || "In progress", dateTime: "" };
   }
   if (player.gameStatusState === "post") {
-    return { primary: `Final${opponent}`, secondary: player.statsLine || "Final", dateTime: "" };
+    return { primary: finalResult || `Final${opponent}`, secondary: player.statsLine || "Final", dateTime: "" };
   }
   if (player.playerId === "0") return { primary: "Empty slot", secondary: "No starter selected", dateTime: "" };
   if (!player.team) return { primary: "Team unavailable", secondary: player.statsLine || "No game data", dateTime: "" };

@@ -812,9 +812,11 @@ button.playerCard.playerRight { text-align: right; }
 }
 
 .playerMain strong {
+  overflow: hidden;
   font-size: 16px;
   line-height: 1.12;
-  white-space: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .playerMain span,
@@ -1129,60 +1131,48 @@ button.playerCard.playerRight { text-align: right; }
   .starterRow { grid-template-columns: minmax(0, 1fr) 36px minmax(0, 1fr); gap: 4px; align-items: stretch; }
   .slotPill { align-self: center; min-height: 30px; border-radius: 7px; font-size: 12px; white-space: nowrap; }
   .playerCard, button.playerCard { min-height: 0; gap: 5px; padding: 8px; border-radius: 10px; align-content: start; }
-  .playerTop, .playerRight .playerTop { display: grid; grid-template-columns: minmax(0, 1fr); gap: 5px; }
-  .playerAvatar { display: none; }
-  .playerMain { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-start; gap: 2px 5px; }
-  .playerMain strong { font-size: 14px; line-height: 1.2; overflow-wrap: anywhere; }
+  .playerTop, .playerRight .playerTop { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 5px; }
+  .playerRight .playerTop { grid-template-columns: auto minmax(0, 1fr); }
+  .playerAvatar, .defenseAvatar { display: none; }
+  .playerMain { display: block; grid-column: 1; grid-row: 1; }
+  .playerRight .playerMain { grid-column: 2; }
+  .playerMain strong { font-size: 14px; line-height: 1.2; }
+  .playerMain > span { margin-top: 3px; }
   .playerMain span { font-size: 12px; line-height: 1.2; }
-  .playerMain .playerPosition { display: none; }
-  .playerMain .playerPosition[data-flex="true"] { display: inline; }
+  .playerMain .playerPosition { display: inline; }
   .playerMain .injuryTag { font-size: 12px; margin-left: 0; padding: 0 3px; }
-  .playerRight .playerMain { justify-content: flex-end; }
   .playerScore, .playerRight .playerScore {
-    display: grid; width: max-content; max-width: 100%; justify-self: start; justify-items: center;
+    display: grid; grid-column: 2; grid-row: 1; width: max-content; max-width: 100%; justify-self: end; justify-items: center;
     gap: 3px; text-align: center;
   }
-  .playerRight .playerScore { justify-self: end; }
+  .playerRight .playerScore { grid-column: 1; justify-self: start; }
   .playerScore strong { font-size: 20px; line-height: 1.1; }
-  .playerScore span { font-size: 12px; line-height: 1.2; }
+  .playerScore span { font-size: 12px; line-height: 1.2; white-space: nowrap; }
   .playerGame { gap: 3px; padding: 0; border-radius: 0; background: transparent; }
   .playerGame time, .playerGame > strong, .playerGame > span { font-size: 12px; line-height: 1.3; white-space: normal; overflow-wrap: anywhere; }
   /* Scheduled time already conveys pregame status; retain the text for assistive technology. */
   .gamePending > span { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .defenseCard .playerTop { grid-template-columns: 28px minmax(0, 1fr); align-items: center; }
-  .defenseCard.playerRight .playerTop { grid-template-columns: minmax(0, 1fr) 28px; }
-  .defenseCard .playerMain { grid-column: 2; grid-row: 1; }
-  .defenseCard.playerRight .playerMain { grid-column: 1; }
-  .defenseCard .playerScore { grid-column: 1 / -1; }
-  .defenseAvatar { display: grid; grid-column: 1; grid-row: 1; width: 28px; height: 28px; font-size: 10px; }
-  .playerRight .defenseAvatar { grid-column: 2; }
   .drilldownHead { align-items: flex-start; flex-wrap: wrap; }
   .auditNote, .auditEvent span, .auditEvent small, .auditEvent p { font-size: 12px; }
 
-  /* Shared rows keep names, scores, game status, and complete stat tokens aligned
-     even when one side wraps. Subgrid is supported by current iOS Safari. */
+  /* Share the compact name/score header, result, and stat rows across both sides. */
   @supports (grid-template-rows: subgrid) {
-    .starterRow { grid-template-rows: auto auto auto auto; row-gap: 5px; }
+    .starterRow { grid-template-rows: auto auto auto; row-gap: 5px; }
     .starterRow > :first-child { grid-column: 1; grid-row: 1 / -1; }
     .starterRow > :last-child { grid-column: 3; grid-row: 1 / -1; }
     .playerCard, button.playerCard { grid-template-columns: minmax(0, 1fr); grid-template-rows: subgrid; }
-    .slotPill { grid-column: 2; grid-row: 2; align-self: center; }
-    .playerTop, .playerRight .playerTop, .defenseCard .playerTop, .defenseCard.playerRight .playerTop, .playerGame { display: contents; }
-    .playerMain, .defenseCard .playerMain, .defenseCard.playerRight .playerMain { grid-column: 1; grid-row: 1; align-content: start; }
-    .playerScore, .defenseCard .playerScore { grid-column: 1; grid-row: 2; align-content: start; }
-    .playerGame > time, .playerGame > strong { grid-column: 1; grid-row: 3; }
-    .playerGame > span { grid-column: 1; grid-row: 4; }
-    .defenseAvatar, .playerRight .defenseAvatar { grid-column: 1; grid-row: 1; align-self: start; justify-self: start; }
-    .playerRight .defenseAvatar { justify-self: end; }
-    .defenseCard .playerMain { padding-left: 34px; min-height: 28px; }
-    .defenseCard.playerRight .playerMain { padding-left: 0; padding-right: 34px; }
+    .slotPill { grid-column: 2; grid-row: 1; align-self: start; margin-top: 8px; }
+    .playerTop { grid-column: 1; grid-row: 1; }
+    .playerGame { display: contents; }
+    .playerGame > time, .playerGame > strong { grid-column: 1; grid-row: 2; }
+    .playerGame > span { grid-column: 1; grid-row: 3; }
   }
 }
 
-/* Portrait score blocks face the center gutter; preserve desktop/landscape. */
+/* Portrait team totals face the center gutter; preserve desktop/landscape. */
 @media (max-width: 680px) and (orientation: portrait) {
-  .scoreBlock, .playerScore { justify-self: end; }
-  .right .scoreBlock, .playerRight .playerScore { justify-self: start; }
+  .scoreBlock { justify-self: end; }
+  .right .scoreBlock { justify-self: start; }
 }
 
 @media (max-width: 360px) {

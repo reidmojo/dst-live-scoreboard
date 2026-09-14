@@ -18,7 +18,7 @@ const exports = {};
 runInNewContext(compiled, { exports, require: name => name.endsWith(".css") ? cssModule : name.endsWith("presentation.js") ? presentation : name.endsWith("live-estimates.js") ? liveEstimates : require(name), Intl, Date, Set, Map });
 
 const trackerSource = await readFile(new URL("../app/fantasy_football/dst/dst-tracker.tsx", import.meta.url), "utf8");
-const trackerCompiled = ts.transpileModule(`${trackerSource}\nexport { MatchupCard, PlayerCard, ScoreNotices };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const trackerCompiled = ts.transpileModule(`${trackerSource}\nexport { MatchupCard, PlayerCard, ScoreNotices, StarterRows };`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const tracker = {};
 runInNewContext(trackerCompiled, { exports: tracker, require: name => name.endsWith(".css") ? cssModule : name.endsWith("presentation.js") ? presentation : name.endsWith("live-estimates.js") ? liveEstimates : name.endsWith("health.js") ? health : name === "./games-view" ? exports : require(name), Intl, Date, Set, Map });
 
@@ -132,19 +132,38 @@ test("populated matchup stat lines keep each value and label together without tr
   const css = await readFile(new URL("../app/fantasy_football/dst/dst.module.css", import.meta.url), "utf8");
   assert.match(css, /\.playerStat\s*{\s*white-space: nowrap/);
   assert.match(css, /grid-template-rows: subgrid/);
-  assert.match(css, /\.playerScore, \.defenseCard \.playerScore { grid-column: 1; grid-row: 2/);
+  assert.match(css, /\.playerTop { grid-column: 1; grid-row: 1; }/);
+  assert.match(css, /\.playerGame > time, \.playerGame > strong { grid-column: 1; grid-row: 2; }/);
 });
 
-test("portrait score blocks face the center without changing desktop or landscape layouts", async () => {
+test("portrait team totals face the center and player names share a mirrored row with their score", async () => {
   const css = await readFile(new URL("../app/fantasy_football/dst/dst.module.css", import.meta.url), "utf8");
   assert.match(css, /\.scoreBlock, \.right \.scoreBlock {[^}]*width: max-content;[^}]*justify-self: start;[^}]*justify-items: center/);
   assert.match(css, /\.right \.scoreBlock { justify-self: end; }/);
-  assert.match(css, /\.playerScore, \.playerRight \.playerScore {[^}]*width: max-content;[^}]*justify-self: start;[^}]*justify-items: center/);
-  assert.match(css, /\.playerRight \.playerScore { justify-self: end; }/);
+  assert.match(css, /\.playerTop, \.playerRight \.playerTop {[^}]*grid-template-columns: minmax\(0, 1fr\) auto;/);
+  assert.match(css, /\.playerRight \.playerTop { grid-template-columns: auto minmax\(0, 1fr\); }/);
+  assert.match(css, /\.playerMain { display: block; grid-column: 1; grid-row: 1; }/);
+  assert.match(css, /\.playerRight \.playerMain { grid-column: 2; }/);
+  assert.match(css, /\.playerScore, \.playerRight \.playerScore {[^}]*grid-column: 2; grid-row: 1;[^}]*width: max-content;[^}]*justify-self: end;/);
+  assert.match(css, /\.playerRight \.playerScore { grid-column: 1; justify-self: start; }/);
+  assert.match(css, /\.playerMain strong {[^}]*overflow: hidden;[^}]*text-overflow: ellipsis;[^}]*white-space: nowrap;/);
   const portrait = css.slice(css.indexOf("@media (max-width: 680px) and (orientation: portrait)"));
-  assert.match(portrait, /^@media \(max-width: 680px\) and \(orientation: portrait\) \{\s*\.scoreBlock, \.playerScore \{ justify-self: end; \}\s*\.right \.scoreBlock, \.playerRight \.playerScore \{ justify-self: start; \}\s*\}/);
-  assert.ok(css.indexOf(portrait) > css.lastIndexOf(".playerRight .playerScore { justify-self: end; }"));
+  assert.match(portrait, /^@media \(max-width: 680px\) and \(orientation: portrait\) \{\s*\.scoreBlock \{ justify-self: end; \}\s*\.right \.scoreBlock \{ justify-self: start; \}\s*\}/);
   assert.match(css, /\.gameCardTeam\[data-side="home"\] {[^}]*grid-template-areas: "score identity logo"; text-align: right/);
   assert.match(css, /\.gameCardTeam {[^}]*grid-template-areas: "logo identity score"/);
   assert.match(css, /--game-card-logo-size: 32px/);
+});
+
+test("starter rows show final NFL results from each team's perspective and retain full player names", () => {
+  const makePlayer = (team, name, shortName) => ({ ...game.positionGroups[0].home[0], team, name, shortName,
+    slot: "RB", position: "RB", score: 25.9, projectedScore: 13.12, gameStatusState: "post", gameCompleted: true, statsLine: "20 CAR, 60 YD" });
+  const matchup = { teams: [{ starters: [makePlayer("HOU", "David Montgomery", "D. Montgomery")] }, { starters: [makePlayer("BUF", "James Cook", "J. Cook")] }] };
+  const nflGames = [{ ...game, statusState: "post", completed: true,
+    teams: [{ abbreviation: "HOU", homeAway: "home", score: 31 }, { abbreviation: "BUF", homeAway: "away", score: 36 }] }];
+  const html = renderToStaticMarkup(React.createElement(tracker.StarterRows, { matchup, nflGames, timeZone: "UTC", onSelectDefense() {} }));
+  assert.match(html, /title="David Montgomery" aria-label="David Montgomery">D\. Montgomery/);
+  assert.match(html, /Final L 31-36 vs BUF/);
+  assert.match(html, /Final W 36-31 @ HOU/);
+  assert.match(html, /<strong>25\.90<\/strong>/);
+  assert.match(html, /Proj\. 13\.12/);
 });

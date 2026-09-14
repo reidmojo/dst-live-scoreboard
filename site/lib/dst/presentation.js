@@ -79,6 +79,24 @@ function emptySchedule() {
   return { gameStart: "", gameStatus: "", gameStatusState: "", gameCompleted: false, gameClock: "", gamePeriod: 0, opponent: "", homeAway: "" };
 }
 
+// NFL result from the player's perspective, never a fantasy score or a live lead.
+export function finalGameResult(team, games = []) {
+  const teamKey = canonicalTeam(team);
+  if (!teamKey) return "";
+  const game = games.find(candidate => (candidate.teams || []).some(entry => canonicalTeam(entry.abbreviation) === teamKey));
+  if (game?.statusState !== "post" || game.completed !== true) return "";
+  const own = game.teams.find(entry => canonicalTeam(entry.abbreviation) === teamKey);
+  const opponent = game.teams.find(entry => canonicalTeam(entry.abbreviation) !== teamKey);
+  const against = opponent ? ` ${own.homeAway === "away" ? "@" : "vs"} ${displayTeam(opponent.abbreviation)}` : "";
+  const validScore = value => (typeof value === "number" || (typeof value === "string" && value.trim() !== ""))
+    && Number.isInteger(Number(value)) && Number(value) >= 0;
+  if (!opponent || !validScore(own.score) || !validScore(opponent.score)) return `Final${against}`;
+  const ownScore = Number(own.score);
+  const opponentScore = Number(opponent.score);
+  const result = ownScore > opponentScore ? "W" : ownScore < opponentScore ? "L" : "T";
+  return `Final ${result} ${ownScore}-${opponentScore}${against}`;
+}
+
 function canonicalTeam(value) {
   const team = String(value || "").toUpperCase();
   return ({ WAS: "WSH", JAC: "JAX", LA: "LAR", OAK: "LV", SD: "LAC", STL: "LAR" })[team] || team;
