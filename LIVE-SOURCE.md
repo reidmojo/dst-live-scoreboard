@@ -2,10 +2,10 @@
 
 - Site: https://r31d.wiki/fantasy_football/dst
 - Source directory in this repository: `site/`
-- Sites version: **33**
-- Sites source commit: `54973075c1f20681436f792db0a9e1167d08844a`
-- Source Git tree: `ad4cb70fb29dc41ed712299682cf866c3c67dcb5`
-- Deployment archive SHA-256: `b550abefa42c0562d6eccec3006424c5f115a5c79148aa40eccd0f25eb595ed0`
+- Sites version: **34**
+- Sites source commit: `9d72b21893e8223eac1fb4dd05a19fdfc7e717b0`
+- Source Git tree: `19511c677746bb720f48a8df346255797994b73b`
+- Submitted deployment archive SHA-256: `9117e7fa2d8506220957ff31296768af6e4280239b573434f75f01715a08767a`
 
 The `site/` subtree is copied byte-for-byte from the tracked source used to build
 this Sites release. It is not a rewrite or a separately maintained implementation.
@@ -22,6 +22,17 @@ attestation of what Cloudflare is executing.
 
 ## Included changes
 
+- Cache usable provisional scores with their warnings and original timestamps,
+  serve saved scores while refreshing, and keep strict finalization safeguards.
+- Bound provider, storage, and dashboard waits; protect background refreshes from
+  browser disconnects and recover from expired shared work. Add stage diagnostics
+  without logging request headers, bodies, or league rosters.
+- Shorter initial-load timeouts and bounded retry backoff; returning to a mobile
+  tab does not interrupt an active request. Preserve week selection on retries.
+- Compact Games stat lines use YD/TD after CMP/CAR/REC, including cached historical
+  results; expanded scoring breakdowns retain descriptive labels.
+- Matchup player cards link to the selected week's NFL game with Back navigation
+  and a separate D/ST audit control. Empty/bye slots do not invent game links.
 - Consistent larger player names in Matchups and Games: 1.0625rem (17px with
   default browser settings), with no portrait or landscape mobile size reduction.
 - Compact starter headers keep names and scores on one mirrored row, truncating
@@ -41,9 +52,10 @@ attestation of what Cloudflare is executing.
 - Both Matchups and Games views, scoring audits, two-decimal fantasy points,
   mobile layout, and existing scoring reliability checks.
 
-Validation: this typography update passed all 9 targeted rendering/layout checks
-and the production build. Production is deployed through Sites to Cloudflare;
-no GitHub Actions workflow is required or added by this update.
+Validation: all 230 regression checks, TypeScript checks, and the production
+build passed. Local endpoint checks verified saved-first loading followed by a
+fresh update with scoring warnings intact. Production is deployed through Sites
+to Cloudflare; no GitHub Actions workflow is required or added by this update.
 
 `site/.openai/hosting.json` contains a non-secret deployment project identifier and
 logical database binding, not account credentials or production database access.

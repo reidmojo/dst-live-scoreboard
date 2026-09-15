@@ -28,7 +28,7 @@ export function warningGroups(health = {}, teams) {
     if (!group.some(existing => existing.label === warning.label && existing.message === warning.message)) group.push(warning);
   }
   // Preserve a genuine last-good-data fallback even if it has no warning details.
-  if (!groups.upstream.length && (health.sources?.some(source => source.stale) || (health.stale && !health.warnings?.length))) {
+  if (!groups.upstream.length && (health.sources?.some(source => source.stale) || (health.stale && !health.refreshing && !health.warnings?.length))) {
     groups.upstream.push({ label: "Score update", message: "Showing last received data while updates recover." });
   }
   return groups;

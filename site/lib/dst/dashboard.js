@@ -8,6 +8,8 @@ import { sleeperDefaultDstAudit, SLEEPER_DEFAULT_SCORING_VERSION } from "./sleep
 import { buildGameViews, GAME_VIEW_VERSION } from "./games.js";
 import { LIVE_ESTIMATE_VERSION, withLiveProjection } from "./live-estimates.js";
 import { healthFlags } from "./health.js";
+import { createDashboardCache, usableDashboard } from "./dashboard-cache.js";
+import { withDeadline } from "./request-runtime.js";
 
 const SLEEPER_BASE = "https://api.sleeper.app/v1";
 const ESPN_SCOREBOARD = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard";
@@ -20,60 +22,35 @@ const SCHEDULED_POLL_INTERVAL_MS = 300_000;
 const SLEEPER_TO_ESPN_DEFENSE = { WAS: "WSH" };
 
 const fetchJson = createUpstreamClient();
-const dashboardRequests = new Map();
-const dashboards = new Map();
-const DASHBOARD_TTL_MS = 10_000;
+const cachedDashboard = createDashboardCache();
 
-export async function getDashboard(request, db) {
+export async function getDashboard(request, db, options = {}) {
   const url = new URL(request.url);
   const season = url.searchParams.get("season");
-  const week = url.searchParams.get("week");
+  const rawWeek = url.searchParams.get("week");
   if ((season && (!/^20\d{2}$/.test(season) || +season < 2025 || +season > new Date().getUTCFullYear() + 1))
-    || (week && (!/^\d{1,2}$/.test(week) || +week < 1 || +week > 17))) throw new Error("Invalid season or week");
+    || (rawWeek && (!/^\d{1,2}$/.test(rawWeek) || +rawWeek < 1 || +rawWeek > 17))) throw new Error("Invalid season or week");
+  const week = rawWeek ? String(Number(rawWeek)) : null;
   const key = `${season || "latest"}:${week || "latest"}:${SCORING_VERSION}:${SLEEPER_DEFAULT_SCORING_VERSION}:${GAME_VIEW_VERSION}:${LIVE_ESTIMATE_VERSION}`;
-  if (dashboardRequests.has(key)) return dashboardRequests.get(key);
-  const task = (async () => {
-    let cached = dashboards.get(key);
-    if (!cached || Date.now() - Date.parse(cached.generatedAt) >= DASHBOARD_TTL_MS) {
-      try {
-        const row = await db.prepare("SELECT dashboard FROM dst_live_cache WHERE cache_key = ?").bind(key).first();
-        if (row?.dashboard) {
-          const shared = JSON.parse(row.dashboard);
-          if (!cached || shared.generatedAt > cached.generatedAt) cached = shared;
-        }
-      } catch { /* Live reads can still work while durable storage recovers. */ }
-    }
-    if (cached && Date.now() - Date.parse(cached.generatedAt) < DASHBOARD_TTL_MS) return cached;
-    try {
-      const dashboard = await buildDashboard(request, db, cached);
-      if (dashboard.health.ok) {
-        dashboards.set(key, dashboard);
-        try {
-          await db.prepare(`INSERT INTO dst_live_cache (cache_key, dashboard, generated_at)
-            VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET dashboard = excluded.dashboard, generated_at = excluded.generated_at
-            WHERE excluded.generated_at >= dst_live_cache.generated_at`)
-            .bind(key, JSON.stringify(dashboard), dashboard.generatedAt).run();
-        } catch {
-          dashboard.health.warnings.push({ kind: "storage", label: "Backup storage", message: "Live scores loaded; durable backup temporarily unavailable" });
-          dashboard.health.ok = false;
-          dashboard.health.pollIntervalMs = Math.min(dashboard.health.pollIntervalMs || 60_000, 60_000);
-        }
-      }
-      return dashboard;
-    } catch (error) {
-      if (!cached) throw error;
-      return { ...cached, servedAt: new Date().toISOString(), health: { ...cached.health,
-        ok: false, stale: true, pollIntervalMs: LIVE_POLL_INTERVAL_MS,
-        warnings: [...(cached.health.warnings || []), { kind: "upstream", label: "Score update", message: `Showing last confirmed scores: ${error.message}` }] } };
-    }
-  })();
-  dashboardRequests.set(key, task);
-  try { return await task; } finally { dashboardRequests.delete(key); }
+  // The background calculation needs only the URL, not a client's request body,
+  // streams or cancellation signal.
+  const input = { url: request.url };
+  return cachedDashboard(key, db, (previous, signal) => buildDashboard(input, db, previous, { signal, trace: options.trace }), {
+    ...options,
+    accepts: value => usableDashboard(value)
+      && (!season || String(value.selected.season) === season) && (!week || String(value.selected.week) === week)
+      && value.source?.scoringVersion === SCORING_VERSION && value.source?.sleeperDefaultScoringVersion === SLEEPER_DEFAULT_SCORING_VERSION
+      && value.source?.gameViewVersion === GAME_VIEW_VERSION && value.source?.liveEstimateVersion === LIVE_ESTIMATE_VERSION,
+  });
 }
 
-async function buildDashboard(request, db, previous) {
+async function buildDashboard(request, db, previous, { signal, trace } = {}) {
   const url = new URL(request.url);
-  const requestState = { warnings: [], sources: [] };
+  const requestState = { warnings: [], sources: [], signal, trace };
+  const storage = (label, task) => {
+    const bounded = () => withDeadline(task, { timeoutMs: 1200, signal, label });
+    return trace ? trace.run(label, bounded) : bounded();
+  };
   const sleeperState = await fetchJson(`${SLEEPER_BASE}/state/nfl`, {
     ttlMs: 60_000,
     requestState,
@@ -95,19 +72,21 @@ async function buildDashboard(request, db, previous) {
   const week = requestedWeek || weeks.at(-1);
 
   let snapshot;
-  try { snapshot = await readSnapshot(db, league.league_id, selectedSeason, week); }
-  catch { requestState.warnings.push({ kind: "storage", label: "Saved results", message: "Saved results unavailable; recomputing from providers" }); }
+  try { snapshot = await storage("snapshot_read", () => readSnapshot(db, league.league_id, selectedSeason, week)); }
+  catch { signal?.throwIfAborted(); requestState.warnings.push({ kind: "storage", label: "Saved results", message: "Saved results unavailable; recomputing from providers" }); }
   if (snapshot) return dashboardFromSnapshot(snapshot);
 
   const dashboard = league.status === "pre_draft"
     ? await buildPreDraftDashboard({ league, seasons, selectedSeason, week, weeks, latestSeason, requestState, sleeperState })
     : await buildScoredDashboard({ league, seasons, selectedSeason, week, weeks, latestSeason, requestState, sleeperState });
+  signal?.throwIfAborted();
 
   if (dashboard.correction?.status === "finalized" && dashboard.health.ok) {
     try {
-      await saveSnapshot(db, dashboard);
+      await storage("snapshot_write", () => saveSnapshot(db, dashboard));
       dashboard.source.snapshotSaved = true;
     } catch (error) {
+      signal?.throwIfAborted();
       requestState.warnings.push({
         kind: "storage",
         label: "Finalized snapshot",

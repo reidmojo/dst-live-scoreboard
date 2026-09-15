@@ -54,6 +54,30 @@ export function formatProjection(value) {
   return Number.isFinite(number) ? number.toFixed(2) : "0.00";
 }
 
+// Compact Games stat lines already identify each group with CMP / CAR / REC.
+// Apply at render time so saved historical dashboards get the same labels.
+export function compactGameStatLabel(label) {
+  return String(label || "").replace(/^(?:PASS|RUSH|REC) (YD|TD)$/i, "$1");
+}
+
+export function playerGameForWeek(player, games = []) {
+  if (!player?.playerId || String(player.playerId) === "0") return null;
+  // The week's actual player list takes precedence over a current team (trades).
+  const matches = games.filter(game => game.positionGroups?.some(group =>
+    [...group.away, ...group.home].some(entry => String(entry.playerId) === String(player.playerId))));
+  if (matches.length) return matches.length === 1 ? matches[0] : null;
+  const team = canonicalTeam(player.team);
+  if (!team) return null;
+  const scheduled = games.filter(game => game.teams?.some(entry => canonicalTeam(entry.abbreviation) === team));
+  return scheduled.length === 1 ? scheduled[0] : null;
+}
+
+export function gameViewHref(game, selected) {
+  if (!game?.id || !selected?.season || !selected?.week) return "";
+  const params = new URLSearchParams({ season: String(selected.season), week: String(selected.week), view: "games", game: String(game.id) });
+  return `/fantasy_football/dst?${params}`;
+}
+
 export function starterSchedule(team, games = []) {
   const teamKey = canonicalTeam(team);
   if (!teamKey) return emptySchedule();

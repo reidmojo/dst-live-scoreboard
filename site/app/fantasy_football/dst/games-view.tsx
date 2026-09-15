@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatProjection } from "../../../lib/dst/presentation.js";
+import { compactGameStatLabel, formatProjection } from "../../../lib/dst/presentation.js";
 import { playerDisplayProjection, LIVE_ESTIMATE_NOTE } from "../../../lib/dst/live-estimates.js";
 import styles from "./dst.module.css";
 
@@ -130,7 +130,7 @@ function GamePlayerRow({ player, side, pregame, final, myManager, expanded, onTo
         </div>) : <p>{pregame ? "Scoring begins at kickoff." : player.score == null ? "Scoring details are unavailable." : "No scoring events recorded."}</p>}
       </div>
     </details>
-    {player.compactStats.length ? <p className={styles.gameCompactStats}>{final ? <span className={styles.playerFinal}>Final</span> : null}{player.compactStats.map((stat, index) => <span key={`${stat.label}-${index}`}><b>{stat.value}</b> <small>{stat.label}</small></span>)}</p>
+    {player.compactStats.length ? <p className={styles.gameCompactStats}>{final ? <span className={styles.playerFinal}>Final</span> : null}{player.compactStats.map((stat, index) => <span key={`${stat.label}-${index}`}><b>{stat.value}</b> <small>{compactGameStatLabel(stat.label)}</small></span>)}</p>
       : <p className={styles.gamePlayerStatus}>{final ? <><span className={styles.playerFinal}>Final</span> · </> : null}{pregame ? "Yet to play" : player.score == null ? "Stats unavailable" : "No stats recorded"}{player.injuryStatus ? <b className={styles.injuryTag} data-status={player.injuryStatus}>{player.injuryStatus}</b> : null}</p>}
   </article>;
 }

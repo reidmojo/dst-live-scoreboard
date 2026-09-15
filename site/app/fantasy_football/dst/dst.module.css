@@ -725,6 +725,7 @@ button.matchupButton:hover .matchupSide {
 .slotPill[data-slot="DEF"] { color: #f4c95d; }
 
 .playerCard {
+  position: relative;
   display: grid;
   min-width: 0;
   align-items: start;
@@ -734,6 +735,14 @@ button.matchupButton:hover .matchupSide {
   border-radius: 16px;
   background: rgba(48, 58, 76, 0.72);
   color: #f4f7fb;
+}
+
+.playerGameLink { position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
+.playerCard.linkedPlayerCard:hover { border-color: var(--dst-green); }
+.page .playerAuditButton {
+  position: relative; z-index: 2; min-height: 24px; padding: 2px 0;
+  border: 0; border-radius: 4px; background: transparent; color: inherit;
+  font: inherit; text-decoration: underline; text-underline-offset: 3px;
 }
 
 button.playerCard {

@@ -1,6 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { compactInjuryStatus, finalGameResult, formatProjection, starterSchedule, weekOptions } from "../lib/dst/presentation.js";
+import { compactGameStatLabel, compactInjuryStatus, finalGameResult, formatProjection, gameViewHref, playerGameForWeek, starterSchedule, weekOptions } from "../lib/dst/presentation.js";
+
+test("Games labels shorten yards and touchdowns without changing the group markers", () => {
+  assert.deepEqual(["CMP", "PASS YD", "PASS TD", "INT", "CAR", "RUSH YD", "RUSH TD", "REC", "REC YD", "REC TD", "FUM LOST"].map(compactGameStatLabel),
+    ["CMP", "YD", "TD", "INT", "CAR", "YD", "TD", "REC", "YD", "TD", "FUM LOST"]);
+});
+
+test("player game links use the selected week's player identity, then team aliases, never an ambiguous game", () => {
+  const oldGame = { id: "old-team-game", teams: [{ abbreviation: "PHI" }], positionGroups: [{ away: [], home: [{ playerId: "qb" }] }] };
+  const newTeamGame = { id: "current-team-game", teams: [{ abbreviation: "DAL" }] };
+  assert.equal(playerGameForWeek({ playerId: "qb", team: "DAL" }, [newTeamGame, oldGame]), oldGame);
+  const washington = { id: "was-game", teams: [{ abbreviation: "WSH" }] };
+  assert.equal(playerGameForWeek({ playerId: "WAS", team: "WAS" }, [washington]), washington);
+  assert.equal(playerGameForWeek({ playerId: "0", team: "PHI" }, [oldGame]), null);
+  assert.equal(playerGameForWeek({ playerId: "bye", team: "BAL" }, [oldGame]), null);
+  assert.equal(playerGameForWeek({ playerId: "unknown", team: "" }, [oldGame]), null);
+  assert.equal(playerGameForWeek({ playerId: "qb", team: "PHI" }, [oldGame, { ...oldGame, id: "duplicate" }]), null);
+  assert.equal(gameViewHref(oldGame, { season: "2025", week: 3 }), "/fantasy_football/dst?season=2025&week=3&view=games&game=old-team-game");
+  assert.equal(gameViewHref(null, { season: "2025", week: 3 }), "");
+});
 
 test("defaults a preseason league to fantasy Week 1", () => {
   const league = { status: "in_season", settings: { start_week: 1, leg: 3 } };

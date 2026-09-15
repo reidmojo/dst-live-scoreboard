@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { finalGameResult, starterSchedule } from "../../../lib/dst/presentation.js";
+import { finalGameResult, gameViewHref, playerGameForWeek, starterSchedule } from "../../../lib/dst/presentation.js";
 import { playerDisplayProjection, teamLiveEstimate, matchupWinEstimate, LIVE_ESTIMATE_NOTE } from "../../../lib/dst/live-estimates.js";
 import { warningGroups } from "../../../lib/dst/health.js";
+import { DASHBOARD_REQUEST_TIMEOUT_MS, INITIAL_LOADING_HINT_MS, scoreRetryDelay, selectionKey } from "../../../lib/dst/loading-policy.js";
 import { GameList, GameDetail, type NflGame } from "./games-view";
 import styles from "./dst.module.css";
 
@@ -78,6 +79,7 @@ type Dashboard = {
   health: {
     ok: boolean;
     stale: boolean;
+    refreshing?: boolean;
     warnings: Array<{ kind?: string; label?: string; message?: string; teams?: string[] }>;
     sources?: Array<{ stale?: boolean }>;
     liveGameCount: number;
@@ -155,6 +157,7 @@ export default function DstTracker() {
   const [data, setData] = useState<Dashboard | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [slowInitialLoad, setSlowInitialLoad] = useState(false);
   const [activeMatchupId, setActiveMatchupId] = useState<string | null>(null);
   const [view, setView] = useState<"matchups" | "games">("matchups");
   const [activeGameId, setActiveGameId] = useState<string | null>(null);
@@ -165,20 +168,39 @@ export default function DstTracker() {
   const timerRef = useRef<number | null>(null);
   const requestIdRef = useRef(0);
   const dataRef = useRef<Dashboard | null>(null);
+  const pendingSelectionRef = useRef<string | null>(null);
+  const requestedSelectionRef = useRef<Selection>({});
+  const failureCountRef = useRef(0);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const gameHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const gameOriginRef = useRef<{ matchupId: string; triggerId: string; scrollTop: number } | null>(null);
   const auditRef = useRef<HTMLElement | null>(null);
 
-  const loadDashboard = useCallback(async (selection: Selection = {}, canonicalize = true) => {
+  const loadDashboard = useCallback(async (selection: Selection = {}, canonicalize = true, preferFresh = true) => {
+    const key = selectionKey(selection);
+    // Safari visibility/resume events must not restart an initial load.
+    if (pendingSelectionRef.current === key) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
     const requestId = ++requestIdRef.current;
-    const timeout = window.setTimeout(() => controller.abort(new DOMException("Score update timed out; retrying shortly", "TimeoutError")), 30000);
+    pendingSelectionRef.current = key;
+    const previousSelectionKey = selectionKey(requestedSelectionRef.current);
+    requestedSelectionRef.current = selection;
+    const timeout = window.setTimeout(() => controller.abort(new DOMException("The score update timed out. Retrying shortly.", "TimeoutError")), DASHBOARD_REQUEST_TIMEOUT_MS);
+    const current = dataRef.current;
+    if (current && key !== previousSelectionKey) {
+      // Never show one week's scores beneath a different week's URL/selection.
+      dataRef.current = null;
+      setData(null);
+      failureCountRef.current = 0;
+    }
     setLoading(true);
     setError("");
     const params = new URLSearchParams();
     if (selection.season) params.set("season", selection.season);
     if (selection.week) params.set("week", selection.week);
+    if (preferFresh) params.set("refresh", "1");
 
     try {
       const response = await fetch(`${API_PATH}${params.size ? `?${params}` : ""}`, {
@@ -194,9 +216,13 @@ export default function DstTracker() {
       setUserTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
       dataRef.current = nextData;
       setData(nextData);
+      failureCountRef.current = nextData.health.stale && !nextData.health.refreshing ? failureCountRef.current + 1 : 0;
 
       const locationState = readLocationSelection();
-      if (canonicalize) {
+      // A saved default-week result may be from before a week/season rollover.
+      // Resolve the default with fresh data before replacing its URL.
+      if (canonicalize && (!nextData.health.stale || (selection.season && selection.week))) {
+        requestedSelectionRef.current = { season: nextData.selected.season, week: String(nextData.selected.week) };
         const matchupStillExists = locationState.matchup && nextData.matchups.some((matchup) => matchup.id === locationState.matchup);
         const gameStillExists = locationState.game && nextData.nflGames.some((game) => game.id === locationState.game);
         const nextView = gameStillExists || locationState.view === "games" ? "games" : "matchups";
@@ -219,18 +245,24 @@ export default function DstTracker() {
         : nextData.teams.find((team) => team.manager.toLowerCase() === "r31d")?.manager || savedManager;
       setMyManager(preferred);
     } catch (loadError) {
-      if (loadError instanceof DOMException && loadError.name === "AbortError") return;
       if (requestId !== requestIdRef.current) return;
-      setError(loadError instanceof Error ? loadError.message : "Could not load the scoreboard.");
+      if (controller.signal.aborted && controller.signal.reason?.name !== "TimeoutError") return;
+      failureCountRef.current += 1;
+      const reason = controller.signal.aborted ? controller.signal.reason : loadError;
+      setError(reason instanceof Error ? reason.message : "Could not load the scoreboard.");
     } finally {
       window.clearTimeout(timeout);
-      if (requestId === requestIdRef.current) setLoading(false);
+      if (requestId === requestIdRef.current) {
+        pendingSelectionRef.current = null;
+        abortRef.current = null;
+        setLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     const initial = readLocationSelection();
-    const start = window.setTimeout(() => void loadDashboard({ season: initial.season, week: initial.week }), 0);
+    const start = window.setTimeout(() => void loadDashboard({ season: initial.season, week: initial.week }, true, false), 0);
 
     const onPopState = () => {
       const locationState = readLocationSelection();
@@ -252,18 +284,20 @@ export default function DstTracker() {
     return () => {
       window.clearTimeout(start);
       window.removeEventListener("popstate", onPopState);
+      requestIdRef.current += 1;
       abortRef.current?.abort();
+      pendingSelectionRef.current = null;
     };
   }, [loadDashboard]);
 
   useEffect(() => {
     if (timerRef.current) window.clearTimeout(timerRef.current);
-    const delay = error || !data ? 15000 : Number(data.health.pollIntervalMs || 0);
+    const delay = error || !data || (data.health.stale && !data.health.refreshing)
+      ? scoreRetryDelay(failureCountRef.current) : Number(data.health.pollIntervalMs || 0);
     if (loading || delay <= 0) return;
     timerRef.current = window.setTimeout(() => {
       if (!document.hidden) {
-        const selection = data ? { season: data.selected.season, week: String(data.selected.week) } : readLocationSelection();
-        void loadDashboard(selection, !data);
+        void loadDashboard(requestedSelectionRef.current);
       }
     }, delay);
     return () => {
@@ -272,10 +306,16 @@ export default function DstTracker() {
   }, [data, error, loading, loadDashboard]);
 
   useEffect(() => {
+    if (!loading || data) { setSlowInitialLoad(false); return; }
+    const timer = window.setTimeout(() => setSlowInitialLoad(true), INITIAL_LOADING_HINT_MS);
+    return () => window.clearTimeout(timer);
+  }, [loading, data]);
+
+  useEffect(() => {
     const onVisibilityChange = () => {
       const current = dataRef.current;
-      if (!document.hidden && (!current || current.health.pollIntervalMs > 0)) {
-        void loadDashboard(current ? { season: current.selected.season, week: String(current.selected.week) } : readLocationSelection(), !current);
+      if (!document.hidden && !pendingSelectionRef.current && (!current || current.health.pollIntervalMs > 0)) {
+        void loadDashboard(readLocationSelection(), true, !!current);
       }
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
@@ -288,6 +328,19 @@ export default function DstTracker() {
     if ((activeMatchupId || activeGameId) && !dialog.open) dialog.showModal();
     if (!activeMatchupId && !activeGameId && dialog.open) dialog.close();
   }, [activeMatchupId, activeGameId]);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (activeGameId && dialog) {
+      dialog.scrollTop = 0;
+      gameHeadingRef.current?.focus({ preventScroll: true });
+    } else if (activeMatchupId && gameOriginRef.current?.matchupId === activeMatchupId && dialog) {
+      const origin = gameOriginRef.current;
+      dialog.scrollTop = origin.scrollTop;
+      document.getElementById(origin.triggerId)?.focus({ preventScroll: true });
+      gameOriginRef.current = null;
+    }
+  }, [activeGameId, activeMatchupId]);
 
   useEffect(() => {
     if (!defenseSelection || !auditRef.current) return;
@@ -362,11 +415,15 @@ export default function DstTracker() {
     writeLocation({ view: next === "games" ? "games" : null, matchup: null, game: null }, "push");
   }
 
-  function openGame(game: NflGame) {
+  function openGame(game: NflGame, trigger?: HTMLAnchorElement) {
+    if (!data || !data.nflGames.some(candidate => candidate.id === game.id)) return;
+    gameOriginRef.current = activeMatchupId && trigger
+      ? { matchupId: activeMatchupId, triggerId: trigger.id, scrollTop: dialogRef.current?.scrollTop || 0 } : null;
+    setView("games");
     setActiveMatchupId(null);
     setActiveGameId(game.id);
     setDefenseSelection(null);
-    writeLocation({ view: "games", game: game.id, matchup: null }, "push", { ...(window.history.state || {}), dstModal: true });
+    writeLocation({ season: data.selected.season, week: String(data.selected.week), view: "games", game: game.id, matchup: null }, "push", { ...(window.history.state || {}), dstModal: true });
   }
 
   function closeMatchup() {
@@ -415,7 +472,7 @@ export default function DstTracker() {
             <button
               className={styles.refreshButton}
               type="button"
-              onClick={() => void loadDashboard(data ? { season: data.selected.season, week: String(data.selected.week) } : readLocationSelection(), !data)}
+              onClick={() => void loadDashboard(readLocationSelection())}
               disabled={loading}
             >
               {loading ? "Refreshing" : "Refresh"}
@@ -438,7 +495,9 @@ export default function DstTracker() {
           </div>
           <p className={styles.estimateNote} title={LIVE_ESTIMATE_NOTE}>Sleeper-style estimates · D/ST uses a standard projection baseline.</p>
           <ScoreNotices data={data} error={error} />
-          {!error && !data ? <div className={styles.empty}>Loading the league…</div> : null}
+          {!error && !data ? <div className={styles.empty} role="status">{slowInitialLoad
+            ? "Still connecting to the score providers… We’ll retry automatically if this takes too long."
+            : "Loading the league…"}</div> : null}
           <div role="tabpanel" id={`${view}-panel`} aria-labelledby={`${view}-tab`}>
           {!error && data && view === "matchups" && !sortedMatchups.length ? <div className={styles.empty}>{data.emptyState || "No matchups are available yet."}</div> : null}
           {view === "games" && data ? <GameList games={data.nflGames} timeZone={userTimeZone} onOpen={openGame} /> : <div className={styles.matchupGrid}>
@@ -485,7 +544,7 @@ export default function DstTracker() {
         }}
       >
         {activeGame && data ? <>
-          <div className={styles.dialogHead}><div><span className={styles.eyebrow}>NFL Game · Week {data.selected.week}</span><h2>{(activeGame.teams.find(team => team.homeAway === "away") || activeGame.teams[0])?.abbreviation} v {(activeGame.teams.find(team => team.homeAway === "home") || activeGame.teams[1])?.abbreviation}</h2></div><button type="button" aria-label="Close game" onClick={closeMatchup}>Close</button></div>
+          <div className={styles.dialogHead}><div><span className={styles.eyebrow}>NFL Game · Week {data.selected.week}</span><h2 ref={gameHeadingRef} tabIndex={-1}>{(activeGame.teams.find(team => team.homeAway === "away") || activeGame.teams[0])?.abbreviation} v {(activeGame.teams.find(team => team.homeAway === "home") || activeGame.teams[1])?.abbreviation}</h2></div><button type="button" aria-label={gameOriginRef.current ? "Back to matchup" : "Close game"} onClick={closeMatchup}>{gameOriginRef.current ? "Back" : "Close"}</button></div>
           <ScoreNotices data={data} error={error} teams={activeGame.teams.map(team => team.abbreviation)} />
           <GameDetail key={`${data.selected.season}-${data.selected.week}-${activeGame.id}`} game={activeGame} timeZone={userTimeZone} myManager={myManager} week={data.selected.week} />
         </> : null}
@@ -505,7 +564,7 @@ export default function DstTracker() {
               <YetToPlaySummary matchup={activeMatchup} />
               <h3 className={styles.starterTitle}>Starters</h3>
               <div className={styles.starterBoard}>
-                <StarterRows matchup={activeMatchup} nflGames={data.nflGames} timeZone={userTimeZone} onSelectDefense={(team, trigger) => setDefenseSelection({ rosterId: String(team.rosterId), trigger })} />
+                <StarterRows matchup={activeMatchup} nflGames={data.nflGames} selected={data.selected} onOpenGame={openGame} timeZone={userTimeZone} onSelectDefense={(team, trigger) => setDefenseSelection({ rosterId: String(team.rosterId), trigger })} />
               </div>
               {selectedDefense ? (
                 <DefenseAudit team={selectedDefense} auditRef={auditRef} onClose={closeDefenseAudit} />
@@ -526,6 +585,9 @@ function ScoreNotices({ data, error, teams }: { data: Dashboard | null; error: s
     { title: "Saved-data notice", rows: groups.storage },
   ];
   return <>
+    {data?.health.refreshing && !error ? <p className={styles.estimateNote} role="status">
+      Showing saved scores from {formatDateTime(data.health.dataAsOf || data.generatedAt)}. Checking for updates…
+    </p> : null}
     {error || groups.upstream.length ? <div className={`${styles.empty} ${styles.error}`} role="status">
       <strong>Score update interrupted</strong>
       <p>{error || groups.upstream.map(warning => warning.message).join(" · ")}</p>
@@ -647,7 +709,7 @@ function yetToPlayDetails(team?: Team) {
   return { count: yetToPlay.length, summary: summary || "All starters have played" };
 }
 
-function StarterRows({ matchup, nflGames, timeZone, onSelectDefense }: { matchup: Matchup; nflGames: NflGame[]; timeZone: string; onSelectDefense: (team: Team, trigger: HTMLButtonElement) => void }) {
+function StarterRows({ matchup, nflGames, selected, onOpenGame, timeZone, onSelectDefense }: { matchup: Matchup; nflGames: NflGame[]; selected?: Dashboard["selected"]; onOpenGame?: (game: NflGame, trigger: HTMLAnchorElement) => void; timeZone: string; onSelectDefense: (team: Team, trigger: HTMLButtonElement) => void }) {
   const [leftTeam, rightTeam] = matchup.teams;
   const count = Math.max(leftTeam?.starters.length || 0, rightTeam?.starters.length || 0);
   if (!count) return <div className={styles.empty}>No starters are available for this matchup.</div>;
@@ -657,16 +719,18 @@ function StarterRows({ matchup, nflGames, timeZone, onSelectDefense }: { matchup
     const slot = left?.slot || right?.slot || "STARTER";
     return (
       <div className={styles.starterRow} key={`${slot}-${index}`}>
-        <PlayerCard player={left} team={leftTeam} side="left" homeAway={starterSchedule(left?.team, nflGames).homeAway} nflGames={nflGames} timeZone={timeZone} onSelectDefense={onSelectDefense} />
+        <PlayerCard player={left} team={leftTeam} side="left" homeAway={starterSchedule(left?.team, nflGames).homeAway} nflGames={nflGames} selected={selected} onOpenGame={onOpenGame} timeZone={timeZone} onSelectDefense={onSelectDefense} />
         <span className={styles.slotPill} data-slot={slot.toUpperCase()}>{slotLabel(slot)}</span>
-        <PlayerCard player={right} team={rightTeam} side="right" homeAway={starterSchedule(right?.team, nflGames).homeAway} nflGames={nflGames} timeZone={timeZone} onSelectDefense={onSelectDefense} />
+        <PlayerCard player={right} team={rightTeam} side="right" homeAway={starterSchedule(right?.team, nflGames).homeAway} nflGames={nflGames} selected={selected} onOpenGame={onOpenGame} timeZone={timeZone} onSelectDefense={onSelectDefense} />
       </div>
     );
   });
 }
 
-function PlayerCard({ player, team, side, homeAway, nflGames = [], timeZone, onSelectDefense }: { player?: Starter; team?: Team; side: "left" | "right"; homeAway: string; nflGames?: NflGame[]; timeZone: string; onSelectDefense: (team: Team, trigger: HTMLButtonElement) => void }) {
+function PlayerCard({ player, team, side, homeAway, nflGames = [], selected, onOpenGame, timeZone, onSelectDefense }: { player?: Starter; team?: Team; side: "left" | "right"; homeAway: string; nflGames?: NflGame[]; selected?: Dashboard["selected"]; onOpenGame?: (game: NflGame, trigger: HTMLAnchorElement) => void; timeZone: string; onSelectDefense: (team: Team, trigger: HTMLButtonElement) => void }) {
   if (!player || !team) return <div />;
+  const nflGame = playerGameForWeek(player, nflGames);
+  const gameHref = gameViewHref(nflGame, selected);
   const game = playerGameDisplay(player, timeZone, homeAway, finalGameResult(player.team, nflGames));
   const pregame = player.gameStatusState === "pre";
   const final = player.gameStatusState === "post" && player.gameCompleted === true;
@@ -678,7 +742,7 @@ function PlayerCard({ player, team, side, homeAway, nflGames = [], timeZone, onS
         <PlayerAvatar player={player} />
         <div className={styles.playerMain}>
           <strong title={player.name} aria-label={player.name}>{player.isDefense ? player.team : player.shortName || player.name}</strong>
-          <span>{player.isDefense ? "D/ST · View audit" : <><span className={styles.playerPosition} data-flex={player.position !== player.slot}>{player.position || player.slot} · </span>{player.team}</>} {player.injuryStatus ? <b className={styles.injuryTag} data-status={player.injuryStatus}>{player.injuryStatus}</b> : null}</span>
+          <span>{player.isDefense ? <>D/ST · <button className={styles.playerAuditButton} type="button" aria-label={`${player.name} D/ST: Open scoring audit`} aria-controls="dst-scoring-audit" onClick={event => onSelectDefense(team, event.currentTarget)}>View audit</button></> : <><span className={styles.playerPosition} data-flex={player.position !== player.slot}>{player.position || player.slot} · </span>{player.team}</>} {player.injuryStatus ? <b className={styles.injuryTag} data-status={player.injuryStatus}>{player.injuryStatus}</b> : null}</span>
         </div>
         <div className={styles.playerScore}>
           <strong aria-hidden={pregame || undefined}>{pregame ? "" : fmt(player.score)}</strong>
@@ -692,10 +756,18 @@ function PlayerCard({ player, team, side, homeAway, nflGames = [], timeZone, onS
       </div>
     </>
   );
-  const className = `${styles.playerCard} ${side === "right" ? styles.playerRight : ""}`;
-  return player.isDefense
-    ? <button className={`${className} ${styles.defenseCard}`} data-completed={final || undefined} type="button" aria-label={`${player.name} D/ST: ${pregame ? "Yet to play" : `${fmt(player.score)} custom, ${player.sleeperDefaultScore == null ? 'unavailable' : fmt(player.sleeperDefaultScore)} Sleeper default`}. Open scoring audit`} aria-controls="dst-scoring-audit" onClick={(event) => onSelectDefense(team, event.currentTarget)}>{content}</button>
-    : <div className={className} data-completed={final || undefined}>{content}</div>;
+  const className = `${styles.playerCard} ${side === "right" ? styles.playerRight : ""} ${gameHref ? styles.linkedPlayerCard : ""}`;
+  return <div className={className} data-completed={final || undefined}>
+    {content}
+    {gameHref && nflGame ? <a id={`player-game-${encodeURIComponent(String(team.rosterId))}-${encodeURIComponent(player.playerId)}`}
+      className={styles.playerGameLink} href={gameHref}
+      aria-label={`${player.name}: ${pregame ? "Yet to play" : `${fmt(player.score)} fantasy points`}. View ${nflGame.teams.map((entry: { abbreviation: string }) => entry.abbreviation).join(" vs ")} game, Week ${selected?.week}`}
+      onClick={event => {
+        if (!onOpenGame || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onOpenGame(nflGame, event.currentTarget);
+      }} /> : null}
+  </div>;
 }
 
 function PlayerAvatar({ player }: { player: Starter }) {
