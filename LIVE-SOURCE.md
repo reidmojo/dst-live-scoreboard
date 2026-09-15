@@ -2,10 +2,10 @@
 
 - Site: https://r31d.wiki/fantasy_football/dst
 - Source directory in this repository: `site/`
-- Sites version: **34**
-- Sites source commit: `9d72b21893e8223eac1fb4dd05a19fdfc7e717b0`
-- Source Git tree: `19511c677746bb720f48a8df346255797994b73b`
-- Submitted deployment archive SHA-256: `9117e7fa2d8506220957ff31296768af6e4280239b573434f75f01715a08767a`
+- Sites version: **35**
+- Sites source commit: `af68a9a22feb1e9606d317b55d7d10f5ead519f5`
+- Source Git tree: `ac1de483736821a047a5af9c2468e6e0abe461f9`
+- Submitted deployment archive SHA-256: `b72502ea2d8885d6566c9315b975146f8448a60b58552325c2b48d24126f0050`
 
 The `site/` subtree is copied byte-for-byte from the tracked source used to build
 this Sites release. It is not a rewrite or a separately maintained implementation.
@@ -22,6 +22,12 @@ attestation of what Cloudflare is executing.
 
 ## Included changes
 
+- Calculate team actuals from individual non-D/ST starters plus our D/ST score
+  exactly once. Sleeper commissioner team-total overrides do not feed our scores,
+  default comparison, projections, or win chances. Player stat corrections still
+  flow through; bench players and empty slots do not contribute.
+- Version team aggregation independently and recalculate older cached dashboards
+  and finalized snapshots that could contain double-counted commissioner edits.
 - Cache usable provisional scores with their warnings and original timestamps,
   serve saved scores while refreshing, and keep strict finalization safeguards.
 - Bound provider, storage, and dashboard waits; protect background refreshes from
@@ -52,9 +58,11 @@ attestation of what Cloudflare is executing.
 - Both Matchups and Games views, scoring audits, two-decimal fantasy points,
   mobile layout, and existing scoring reliability checks.
 
-Validation: all 230 regression checks, TypeScript checks, and the production
-build passed. Local endpoint checks verified saved-first loading followed by a
-fresh update with scoring warnings intact. Production is deployed through Sites
+Validation: all 238 regression checks, TypeScript checks, and the production
+build passed. Local endpoint checks verified all 10 team totals against the
+individual Sleeper starter scores plus our D/ST result. Regression coverage checks
+positive, negative and zero overrides, stat corrections, estimates and old saved
+totals. Production is deployed through Sites
 to Cloudflare; no GitHub Actions workflow is required or added by this update.
 
 `site/.openai/hosting.json` contains a non-secret deployment project identifier and

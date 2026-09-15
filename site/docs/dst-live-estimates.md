@@ -36,8 +36,17 @@ library source; differences from the reference are below 1e-7 in recorded checks
 - Use the defense-specific projection consistently for player display and team
   totals. Sleeper's inspected player component passes the defense flag, while its
   separate matchup helper omits it. We do not reproduce that inconsistency.
-- Preserve commissioner adjustments once: start with the authoritative team total
-  and add each starter's projected-minus-actual difference. Exclude bench/empty slots.
+- Assemble actual totals from this week's individual non-D/ST starter scores plus
+  our D/ST score exactly once. Ignore Sleeper's team-level `points` and
+  `custom_points` when calculating our totals; commissioner overrides may already
+  contain our D/ST adjustment. `sleeperTotal` is the unadjusted sum of individual
+  starters for reference, not the commissioner-edited aggregate.
+- Start projections from that independently assembled total and add each starter's
+  projected-minus-actual difference. Exclude bench/empty slots. Official individual
+  player stat corrections still flow through; commissioner team edits do not affect
+  our actuals, default-score comparison, projections or win chances.
+- Version team aggregation separately from the D/ST rules; reject older cached
+  dashboards and finalized snapshots so override-inflated totals are recalculated.
 - Keep full precision for calculations, display fantasy points with two decimals,
   and show complementary rounded percentages.
 - Completed player cards show the original baseline projection for comparison only.
@@ -59,5 +68,5 @@ Compared 240 synthetic player cases to the isolated public function (regular and
 defense, negative/zero/positive actuals, pregame through full time). Maximum absolute
 error: 6.4e-12. Representative win-probability checks reproduce 62/38, 53/47 and
 66/34 after rounding. Automated tests cover missing data, halftime, overtime,
-final ties, commissioner adjustments, mirrored bars and two-decimal display.
+final ties, isolation from commissioner adjustments, mirrored bars and two-decimal display.
 These establish formula parity, not a claim of exact mobile-app or feed-timing parity.

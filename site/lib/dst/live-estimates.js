@@ -66,7 +66,7 @@ export function teamLiveEstimate(team) {
   for (const player of starters) {
     const score = number(player.score), estimate = number(displayedProjection(player));
     if (score == null || estimate == null) return unavailable;
-    // Start from the authoritative team total to retain commissioner adjustments.
+    // Start from our independently assembled actual total, not Sleeper overrides.
     projected += estimate - score;
   }
   return { actual, projected, complete: !team.scoringProvisional && starters.every(player => player.projectionStatus === "final") };

@@ -20,6 +20,9 @@ const EASTERN_TIME_ZONE = "America/New_York";
 const LIVE_POLL_INTERVAL_MS = 15_000;
 const SCHEDULED_POLL_INTERVAL_MS = 300_000;
 const SLEEPER_TO_ESPN_DEFENSE = { WAS: "WSH" };
+// Team aggregation is versioned separately from the D/ST rules so saved totals
+// calculated from commissioner overrides cannot survive a scoring-policy change.
+export const TEAM_SCORING_VERSION = "starter-totals-2026-09-15.1";
 
 const fetchJson = createUpstreamClient();
 const cachedDashboard = createDashboardCache();
@@ -31,7 +34,7 @@ export async function getDashboard(request, db, options = {}) {
   if ((season && (!/^20\d{2}$/.test(season) || +season < 2025 || +season > new Date().getUTCFullYear() + 1))
     || (rawWeek && (!/^\d{1,2}$/.test(rawWeek) || +rawWeek < 1 || +rawWeek > 17))) throw new Error("Invalid season or week");
   const week = rawWeek ? String(Number(rawWeek)) : null;
-  const key = `${season || "latest"}:${week || "latest"}:${SCORING_VERSION}:${SLEEPER_DEFAULT_SCORING_VERSION}:${GAME_VIEW_VERSION}:${LIVE_ESTIMATE_VERSION}`;
+  const key = `${season || "latest"}:${week || "latest"}:${SCORING_VERSION}:${SLEEPER_DEFAULT_SCORING_VERSION}:${GAME_VIEW_VERSION}:${LIVE_ESTIMATE_VERSION}:${TEAM_SCORING_VERSION}`;
   // The background calculation needs only the URL, not a client's request body,
   // streams or cancellation signal.
   const input = { url: request.url };
@@ -40,7 +43,8 @@ export async function getDashboard(request, db, options = {}) {
     accepts: value => usableDashboard(value)
       && (!season || String(value.selected.season) === season) && (!week || String(value.selected.week) === week)
       && value.source?.scoringVersion === SCORING_VERSION && value.source?.sleeperDefaultScoringVersion === SLEEPER_DEFAULT_SCORING_VERSION
-      && value.source?.gameViewVersion === GAME_VIEW_VERSION && value.source?.liveEstimateVersion === LIVE_ESTIMATE_VERSION,
+      && value.source?.gameViewVersion === GAME_VIEW_VERSION && value.source?.liveEstimateVersion === LIVE_ESTIMATE_VERSION
+      && value.source?.teamScoringVersion === TEAM_SCORING_VERSION,
   });
 }
 
@@ -268,6 +272,7 @@ function baseDashboard({ league, seasons, selectedSeason, week, weeks, sleeperSt
       sleeperDefaultScoringVersion: SLEEPER_DEFAULT_SCORING_VERSION,
       gameViewVersion: GAME_VIEW_VERSION,
       liveEstimateVersion: LIVE_ESTIMATE_VERSION,
+      teamScoringVersion: TEAM_SCORING_VERSION,
       snapshotSaved: false,
       status: "ESPN data is unofficial and live scores remain provisional until corrections settle.",
     },
@@ -383,13 +388,13 @@ export function buildLeagueTeams({ rosters, users, matchups, espnScores, players
     .map((roster) => {
       const user = usersById.get(roster.owner_id) || {};
       const matchup = matchupsByRoster.get(roster.roster_id) || {};
-      if (matchup.roster_id != null && (!Array.isArray(matchup.starters) || matchup.points == null)) {
-        throw new Error("Sleeper weekly lineup or team points are missing");
+      if (matchup.roster_id != null && !Array.isArray(matchup.starters)) {
+        throw new Error("Sleeper weekly lineup is missing");
       }
       const rawStarters = matchup.starters || roster.starters || [];
       const rawStarterPoints = matchup.starters_points || [];
       const starterEntries = rawStarters
-        .map((playerId, index) => ({ playerId: String(playerId || "0"), points: rawStarterPoints[index] ?? matchup.players_points?.[playerId] }));
+        .map((playerId, index) => ({ playerId: String(playerId || "0"), points: !playerId || String(playerId) === "0" ? 0 : rawStarterPoints[index] ?? matchup.players_points?.[playerId] }));
       if (matchup.roster_id != null && starterEntries.some(({ playerId, points }) => playerId !== "0" && (points == null || !Number.isFinite(Number(points))))) {
         throw new Error("Sleeper starter points are missing or invalid");
       }
@@ -400,9 +405,13 @@ export function buildLeagueTeams({ rosters, users, matchups, espnScores, players
       const sleeperDstPoints = dstStarterIndex >= 0 ? Number(startersPoints[dstStarterIndex]) : 0;
       if (!Number.isFinite(sleeperDstPoints)) throw new Error("Sleeper starting D/ST points are missing");
       const customDst = espnScores.dstScores[espnDefenseKey(dstTeam)] || { points: 0, components: [], games: [], oldComponents: [], oldEstimatedPoints: 0 };
-      const sleeperTotal = Number(matchup.custom_points ?? matchup.points ?? 0);
-      if (!Number.isFinite(sleeperTotal)) throw new Error("Sleeper weekly team points are invalid");
-      const nonDstSleeperTotal = round(sleeperTotal - sleeperDstPoints);
+      // Sleeper's custom_points is the commissioner-adjusted team total. It can
+      // already include our D/ST result, so neither team-level total is an input.
+      // Sum only this week's individual starters; exclude empty slots and D/ST
+      // before adding our independently calculated defense score exactly once.
+      const sleeperTotal = round(starterEntries.reduce((sum, { points }) => sum + Number(points ?? 0), 0));
+      const nonDstSleeperTotal = round(starterEntries.reduce((sum, { playerId, points }) =>
+        sum + (playerId !== "0" && !isDefenseId(playerId) ? Number(points ?? 0) : 0), 0));
       const projectedCustomTotal = round(nonDstSleeperTotal + customDst.points);
       const dstNflGames = (nflGames || []).filter((game) => game.teams?.some((team) => espnDefenseKey(team.abbreviation) === espnDefenseKey(dstTeam)));
       const oldDstAudit = sleeperDefaultDstAudit(playerStats?.[dstTeam] ?? playerStats?.[espnDefenseKey(dstTeam)], dstNflGames);
@@ -579,7 +588,8 @@ async function readSnapshot(db, leagueId, season, week) {
   try {
     const dashboard = JSON.parse(String(row.dashboard));
     if (dashboard.source?.liveEstimateVersion !== LIVE_ESTIMATE_VERSION || dashboard.source?.gameViewVersion !== GAME_VIEW_VERSION || dashboard.source?.scoringVersion !== SCORING_VERSION
-      || dashboard.source?.sleeperDefaultScoringVersion !== SLEEPER_DEFAULT_SCORING_VERSION || !dashboard.health?.ok) return null;
+      || dashboard.source?.sleeperDefaultScoringVersion !== SLEEPER_DEFAULT_SCORING_VERSION
+      || dashboard.source?.teamScoringVersion !== TEAM_SCORING_VERSION || !dashboard.health?.ok) return null;
     return { dashboard, finalizedAt: String(row.finalized_at || "") };
   } catch {
     return null;

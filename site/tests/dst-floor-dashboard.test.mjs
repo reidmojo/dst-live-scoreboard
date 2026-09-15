@@ -72,13 +72,15 @@ test('live/final/corrected dashboard totals and durable snapshots preserve raw D
     assert.equal(dashboard.scoring.finalDstFloor, -4);
   }
   try {
-    const { getDashboard } = await import(`../lib/dst/dashboard.js?floor=${Math.random()}`);
+    const { getDashboard, TEAM_SCORING_VERSION } = await import(`../lib/dst/dashboard.js?floor=${Math.random()}`);
     // An old-comparison snapshot must not bypass default-score reconstruction, even with the same custom scorer.
     const ongoing = await getDashboard(request, db);
     check(ongoing, -6, -6, 0);
     assert.equal(ongoing.source.snapshot, false);
     assert.equal(ongoing.correction.status, 'live');
     assert.equal(ongoing.health.pollIntervalMs, 15_000);
+    assert.equal(ongoing.source.teamScoringVersion, TEAM_SCORING_VERSION);
+    assert.ok([...liveCache.keys()].every(key => key.endsWith(`:${TEAM_SCORING_VERSION}`)));
 
     now += 60_000; completed = true;
     const ended = await getDashboard(request, db);
@@ -148,6 +150,24 @@ test('live/final/corrected dashboard totals and durable snapshots preserve raw D
     assert.equal(restored.health.pollIntervalMs, 0);
     assert.equal(espnCalls, callsBefore);
     assert.equal(restored.dstScores.BAL.components.filter(row => row.kind === 'final_score_floor').length, 1);
+
+    // Reject previously finalized override-inflated totals, even when every other
+    // scoring version still matches. Also reject an obsolete live-cache payload.
+    const legacy = structuredClone(stored);
+    delete legacy.source.teamScoringVersion;
+    legacy.teams[0].projectedCustomTotal = 999;
+    legacy.generatedAt = new Date(now).toISOString();
+    const legacyRow = { dashboard: JSON.stringify(legacy), finalized_at: stored.correction.finalizesAt };
+    snapshots.set(`${leagueId}:2025:1`, legacyRow);
+    for (const key of liveCache.keys()) liveCache.set(key, legacyRow);
+    const callsBeforeRebuild = espnCalls;
+    const upgraded = await import(`../lib/dst/dashboard.js?team-total-upgrade=${Math.random()}`);
+    const rebuilt = await upgraded.getDashboard(request, db);
+    check(rebuilt, -5.5, -4, 1.5);
+    assert.equal(rebuilt.source.snapshot, false);
+    assert.equal(rebuilt.source.teamScoringVersion, TEAM_SCORING_VERSION);
+    assert.ok(espnCalls > callsBeforeRebuild);
+    assert.equal(JSON.parse(snapshots.get(`${leagueId}:2025:1`).dashboard).teams[0].projectedCustomTotal, 8);
   } finally {
     globalThis.Date = OriginalDate;
     globalThis.fetch = originalFetch;

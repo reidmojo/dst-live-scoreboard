@@ -42,12 +42,12 @@ test("player projection keeps baseline and actual score immutable; missing data 
   assert.equal(withLiveProjection({ ...player, playerId: "0", score: 0 }, null).projectionStatus, "final");
 });
 
-test("team projections include final actuals, live estimates, upcoming starters and commissioner adjustment once", () => {
-  const team = { projectedCustomTotal: 27, starters: [starter("done", 20, 20, "final"), starter("live", 5, 8, "live"), starter("next", 0, 10, "pregame"), starter("0", 0, null, "final")] };
-  assert.deepEqual(teamLiveEstimate(team), { actual: 27, projected: 40, complete: false });
+test("team projections combine independently scored actuals, live estimates and upcoming starters", () => {
+  const team = { projectedCustomTotal: 25, starters: [starter("done", 20, 20, "final"), starter("live", 5, 8, "live"), starter("next", 0, 10, "pregame"), starter("0", 0, null, "final")] };
+  assert.deepEqual(teamLiveEstimate(team), { actual: 25, projected: 38, complete: false });
   team.starters[1] = starter("live", 5, 5, "final");
   team.starters[2] = starter("next", 0, 0, "final");
-  assert.deepEqual(teamLiveEstimate(team), { actual: 27, projected: 27, complete: true });
+  assert.deepEqual(teamLiveEstimate(team), { actual: 25, projected: 25, complete: true });
   assert.equal(teamLiveEstimate({ ...team, scoringProvisional: true }).complete, false);
   team.starters[1].liveProjectedScore = null;
   assert.equal(teamLiveEstimate(team).projected, null);
